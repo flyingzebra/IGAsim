@@ -1,15 +1,15 @@
-# ActiveDirectoryJS v0.1
+# ActiveDirectoryJS v0.1.1
 
-An offline, standalone, JavaScript **LDAP API simulator** backed by an editable JSON Active Directory–like directory. It does **not** implement LDAP network sockets or LDAP BER encoding. Designed for browser-based simulations, including a PowerShellJS adapter.
+An offline, standalone, JavaScript **LDAP API simulator** backed by an inline JavaScript object literal that represents a fictional Active Directory. It does **not** implement LDAP network sockets or LDAP BER encoding. Designed for browser-based simulations, including a PowerShellJS adapter.
 
-## Files
+## Files (repository paths)
 
-- `ActiveDirectory.js` — callable, reusable emulator. No dependencies.
-- `ActiveDirectory-demo.html` — simple offline LDAP request console.
-- `ActiveDirectory.sample.json` — example editable directory JSON.
-- `ActiveDirectory.test.js` — Node.js self-tests (28 assertions/scenarios).
+- `res/ActiveDirectory.js` — public `function ActiveDirectory()`; both `this.DB = {...}` and `this.LDAP = function(...) {...}` are declared inside the constructor.
+- `tools/ActiveDirectory-demo.html` — offline browser console (loads only `../res/ActiveDirectory.js` through a standard `<script>` tag).
+- `res/ActiveDirectory.test.js` — Node.js regression checks.
+- `tools/ActiveDirectory.sample.json` — optional reference snapshot only; not fetched, imported or used at runtime.
 
-Open `ActiveDirectory-demo.html` from the same folder as `ActiveDirectory.js` in a browser. It works with `file://` and does not need a server. Use the example menu, edit the JSON request, then click **Run LDAP()**. The import control reads a local JSON file; changes remain in memory until exported.
+Open **`tools/ActiveDirectory-demo.html`** directly in a browser, even from `file://`. There is no asynchronous JSON loading, XHR or `fetch()`, so no CORS issue. The optional **Inspect inline DB** button reveals the active dataset; **Export** downloads a snapshot of in-memory changes. Reset constructs a new object with a clean copy of the literal.
 
 ## Public API
 
@@ -102,32 +102,41 @@ Example (nested group membership):
 
 The sample dataset includes the group `GG_All_Staff` with nested `GG_IT_Admins`, illustrating direct and inherited membership.
 
-## Custom directory data
+## Inline directory dataset — single source of truth
 
-Construct directly from a static JSON object:
+The default directory is **literal data inside the constructor**, not a runtime resource:
+
+```javascript
+function ActiveDirectory(seed, options) {
+  this.DB = {
+    domain: 'contoso.local',
+    baseDN: 'DC=contoso,DC=local',
+    entries: [ /* domain, OUs, users, security groups, computer */ ]
+  };
+  // Optional in-memory seed override (deep-cloned), options and binding state.
+  this.LDAP = function (request, params) { /* all LDAP operation dispatch */ };
+}
+
+var oAD = new ActiveDirectory();
+var response = oAD.LDAP('search', {filter:'(objectClass=group)'});
+console.log(response.entries, oAD.DB);
+```
+
+Edit `this.DB` in `res/ActiveDirectory.js` to change the shipped fixture. Each `new ActiveDirectory()` gets an independent default directory. You may still supply **an already available JavaScript object** as the first argument for tests or custom simulations; this does not load a file:
 
 ```javascript
 var ownDB = {
-  domain:"example.org",baseDN:"DC=example,DC=org",
-  entries:[
-    {dn:"DC=example,DC=org",attributes:{objectClass:["top","domain"],dc:["example"]}}
-  ]
+  domain:'example.org', baseDN:'DC=example,DC=org',
+  entries:[{dn:'DC=example,DC=org',attributes:{objectClass:['top','domain'],dc:['example']}}]
 };
 var oAD = new ActiveDirectory(ownDB, {allowWrites:true, requireBind:false});
 ```
 
-Or from an existing JSON file (when fetched via a web server):
-
-```javascript
-const data = await (await fetch('ActiveDirectory.sample.json')).json();
-const oAD = new ActiveDirectory(data);
-```
-
-For pure offline `file://` use, use the demo's **local file import** rather than `fetch()` to avoid browser security restrictions.
+`ActiveDirectory.sampleDB()` is maintained for existing tests and consumers and returns an independent copy of the inline default. It does not read `tools/ActiveDirectory.sample.json`. The emulator never fetches any JSON. The exported JSON file is optional, manual and not automatically re-imported.
 
 ## Intended PowerShellJS integration
 
-PowerShellJS should translate its parsed AST to a request object; it should not know the internal `DB.entries` layout. E.g. `Get-ADUser -Filter *` maps to a `search` with `(objectCategory=person)` and optional PowerShell-side projection. Keep LDAP emulation and PowerShell command parsing as separate modules.
+The separate PowerShellJS v0.2 currently uses `res/PS_AD.js` with its own in-memory directory, and has not yet been wired to this emulator. For future unification, PowerShellJS should translate its parsed AST to a request object; it should not know the internal `DB.entries` layout. E.g. `Get-ADUser -Filter *` maps to a `search` with `(objectCategory=person)` and optional PowerShell-side projection. Keep LDAP emulation and PowerShell command parsing as separate modules.
 
 ## Limits of v0.1
 
@@ -138,7 +147,7 @@ This is **not** a real LDAPv3 server or a security boundary. Missing features in
 With Node.js installed:
 
 ```bash
-node ActiveDirectory.test.js
+node res/ActiveDirectory.test.js
 ```
 
-Expected: `28 tests passed.`
+Expected: `32 tests passed.`

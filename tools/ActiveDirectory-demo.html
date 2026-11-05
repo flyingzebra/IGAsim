@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ActiveDirectoryJS v0.1 — LDAP emulator</title>
+<title>ActiveDirectoryJS v0.1.1 — LDAP emulator</title>
 <style>
   :root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }
   * { box-sizing: border-box; }
@@ -16,7 +16,7 @@
   section { min-width:0; border:1px solid #243348; background:#111c2d; border-radius:13px; padding:19px; }
   h2 { margin:0 0 16px; font-size:15px; }
   label { display:block; margin:0 0 8px; font-size:12px; color:#bbcadd; }
-  select, input[type=file], textarea { font:inherit; color:#f0f6ff; background:#0b1423; border:1px solid #34435d; border-radius:8px; padding:10px; width:100%; }
+  select, textarea { font:inherit; color:#f0f6ff; background:#0b1423; border:1px solid #34435d; border-radius:8px; padding:10px; width:100%; }
   select { margin-bottom:14px; }
   textarea { min-height:310px; resize:vertical; line-height:1.55; font-size:12px; tab-size:2; }
   pre { white-space:pre-wrap; overflow-wrap:anywhere; background:#0b1423; border:1px solid #34435d; padding:13px; border-radius:9px; font-size:12px; line-height:1.55; min-height:385px; max-height:600px; overflow:auto; }
@@ -35,7 +35,7 @@
 <main>
 <header>
   <div><h1>ActiveDirectoryJS <span style="color:#60a5fa">v0.1</span></h1>
-    <div class="subtitle">Standalone browser emulator — LDAP-style API / JSON-backed directory</div></div>
+    <div class="subtitle">Standalone browser emulator — LDAP-style API / inline JSON directory</div></div>
   <span class="chip" id="summary">Directory initialized</span>
 </header>
 <div class="columns">
@@ -68,8 +68,8 @@
 </div>
 <section class="footer">
   <h2>Directory dataset</h2>
-  <p class="muted">The default directory is embedded in <code>ActiveDirectory.js</code>. You can load another JSON directory from your computer (no upload or network required), or export the current in-memory dataset including edits. Sample passwords are fake demonstration credentials.</p>
-  <div class="controls"><input id="file" type="file" accept="application/json,.json" style="max-width:340px"><button class="secondary" id="export">Export current DB.json</button></div>
+  <p class="muted">The default directory is declared inline as <code>this.DB = {...}</code> inside <code>res/ActiveDirectory.js</code>. No external JSON file, HTTP request or CORS access is needed. Inspect or export the current in-memory dataset, including edits. All passwords are fictional demonstration credentials.</p>
+  <div class="controls"><button class="secondary" id="inspect-db">Inspect inline DB</button><button class="secondary" id="export">Export current DB.json</button></div>
 </section>
 </main>
 <script src="../res/ActiveDirectory.js"></script>
@@ -108,14 +108,9 @@
     oAD=new ActiveDirectory(); window.oAD=oAD; summary();
     $('output').textContent='Directory reset to sample data.'; $('status').textContent='Ready';
   });
-  $('file').addEventListener('change',async function (event) {
-    var file=event.target.files[0]; if (!file) return;
-    try {
-      var data=JSON.parse(await file.text());
-      if (!data.domain || !data.baseDN || !Array.isArray(data.entries)) throw new Error('Expected {domain, baseDN, entries[]}');
-      oAD=new ActiveDirectory(data); window.oAD=oAD; summary();
-      $('status').textContent='Loaded '+file.name; $('output').textContent='Custom JSON directory loaded.';
-    } catch (error) { $('status').textContent='Import failed: '+error.message; }
+  $('inspect-db').addEventListener('click',function () {
+    $('output').textContent=JSON.stringify(oAD.DB,null,2);
+    $('status').textContent='Inline dataset · '+oAD.DB.entries.length+' entries';
   });
   $('export').addEventListener('click',function () {
     var blob=new Blob([JSON.stringify(oAD.DB,null,2)],{type:'application/json'});

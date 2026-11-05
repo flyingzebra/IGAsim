@@ -1,4 +1,4 @@
-/* ActiveDirectoryJS v0.1 - standalone, in-memory LDAP/Active Directory emulator.
+/* ActiveDirectoryJS v0.1.1 - standalone, in-memory LDAP/Active Directory emulator.
  * Load with <script src="ActiveDirectory.js"></script> or require() in Node.
  * No network service, real LDAP BER framing, ACLs, or cryptographic authentication.
  */
@@ -212,65 +212,313 @@
     });
   }
 
-  function sampleDB() {
-    var ROOT = 'DC=contoso,DC=local';
-    var users = 'OU=Users,' + ROOT, groups = 'OU=Groups,' + ROOT;
-    var alice = 'CN=Alice Adams,' + users;
-    var bob = 'CN=Bob Baker,' + users;
-    var carol = 'CN=Carol Chen,' + users;
-    var admins = 'CN=GG_IT_Admins,' + groups;
-    var staff = 'CN=GG_All_Staff,' + groups;
-    var finance = 'CN=GG_Finance,' + groups;
-    function e(dn, attributes, password) {
-      var x = { dn: dn, attributes: attributes };
-      if (password != null) x._password = password;
-      return x;
-    }
-    return {
-      domain: 'contoso.local', baseDN: ROOT,
-      entries: [
-        e(ROOT, { objectClass: ['top', 'domain', 'domainDNS'], dc: ['contoso'], name: ['contoso'] }),
-        e(users, { objectClass: ['top', 'organizationalUnit'], ou: ['Users'], name: ['Users'] }),
-        e(groups, { objectClass: ['top', 'organizationalUnit'], ou: ['Groups'], name: ['Groups'] }),
-        e('OU=Computers,' + ROOT, { objectClass: ['top', 'organizationalUnit'], ou: ['Computers'] }),
-        e(alice, { objectClass: ['top','person','organizationalPerson','user'], objectCategory: ['person'],
-          cn: ['Alice Adams'], givenName: ['Alice'], sn: ['Adams'], displayName: ['Alice Adams'],
-          sAMAccountName: ['alice'], userPrincipalName: ['alice@contoso.local'],
-          mail: ['alice@contoso.local'], department: ['IT'], userAccountControl: [512] }, 'Password123!'),
-        e(bob, { objectClass: ['top','person','organizationalPerson','user'], objectCategory: ['person'],
-          cn: ['Bob Baker'], givenName: ['Bob'], sn: ['Baker'], displayName: ['Bob Baker'],
-          sAMAccountName: ['bob'], userPrincipalName: ['bob@contoso.local'],
-          mail: ['bob@contoso.local'], department: ['Finance'], userAccountControl: [512] }, 'Password123!'),
-        e(carol, { objectClass: ['top','person','organizationalPerson','user'], objectCategory: ['person'],
-          cn: ['Carol Chen'], givenName: ['Carol'], sn: ['Chen'], displayName: ['Carol Chen'],
-          sAMAccountName: ['carol'], userPrincipalName: ['carol@contoso.local'],
-          mail: ['carol@contoso.local'], department: ['IT'], userAccountControl: [514] }, 'Password123!'),
-        e(admins, { objectClass: ['top','group'], objectCategory: ['group'],
-          cn: ['GG_IT_Admins'], sAMAccountName: ['GG_IT_Admins'], groupType: [-2147483646], member: [alice] }),
-        e(finance, { objectClass: ['top','group'], objectCategory: ['group'],
-          cn: ['GG_Finance'], sAMAccountName: ['GG_Finance'], groupType: [-2147483646], member: [bob] }),
-        e(staff, { objectClass: ['top','group'], objectCategory: ['group'],
-          cn: ['GG_All_Staff'], sAMAccountName: ['GG_All_Staff'], groupType: [-2147483646], member: [admins, bob] }),
-        e('CN=PC-001,OU=Computers,' + ROOT, { objectClass: ['top','person','organizationalPerson','user','computer'],
-          objectCategory: ['computer'], cn: ['PC-001'], name: ['PC-001'],
-          sAMAccountName: ['PC-001$'], dNSHostName: ['pc-001.contoso.local'], userAccountControl: [4096] })
-      ]
-    };
-  }
-
   function ActiveDirectory(seed, options) {
     if (!(this instanceof ActiveDirectory)) return new ActiveDirectory(seed, options);
-    this.DB = clone(seed || sampleDB());
+
+    // Canonical default directory data: edit it HERE, not in an external .json file.
+    // A fresh literal is constructed for every instance; file:// works without fetch/CORS.
+    this.DB = {
+      "domain": "contoso.local",
+      "baseDN": "DC=contoso,DC=local",
+      "entries": [
+        {
+          "dn": "DC=contoso,DC=local",
+          "attributes": {
+            "objectClass": [
+              "top",
+              "domain",
+              "domainDNS"
+            ],
+            "dc": [
+              "contoso"
+            ],
+            "name": [
+              "contoso"
+            ]
+          }
+        },
+        {
+          "dn": "OU=Users,DC=contoso,DC=local",
+          "attributes": {
+            "objectClass": [
+              "top",
+              "organizationalUnit"
+            ],
+            "ou": [
+              "Users"
+            ],
+            "name": [
+              "Users"
+            ]
+          }
+        },
+        {
+          "dn": "OU=Groups,DC=contoso,DC=local",
+          "attributes": {
+            "objectClass": [
+              "top",
+              "organizationalUnit"
+            ],
+            "ou": [
+              "Groups"
+            ],
+            "name": [
+              "Groups"
+            ]
+          }
+        },
+        {
+          "dn": "OU=Computers,DC=contoso,DC=local",
+          "attributes": {
+            "objectClass": [
+              "top",
+              "organizationalUnit"
+            ],
+            "ou": [
+              "Computers"
+            ]
+          }
+        },
+        {
+          "dn": "CN=Alice Adams,OU=Users,DC=contoso,DC=local",
+          "attributes": {
+            "objectClass": [
+              "top",
+              "person",
+              "organizationalPerson",
+              "user"
+            ],
+            "objectCategory": [
+              "person"
+            ],
+            "cn": [
+              "Alice Adams"
+            ],
+            "givenName": [
+              "Alice"
+            ],
+            "sn": [
+              "Adams"
+            ],
+            "displayName": [
+              "Alice Adams"
+            ],
+            "sAMAccountName": [
+              "alice"
+            ],
+            "userPrincipalName": [
+              "alice@contoso.local"
+            ],
+            "mail": [
+              "alice@contoso.local"
+            ],
+            "department": [
+              "IT"
+            ],
+            "userAccountControl": [
+              512
+            ]
+          },
+          "_password": "Password123!"
+        },
+        {
+          "dn": "CN=Bob Baker,OU=Users,DC=contoso,DC=local",
+          "attributes": {
+            "objectClass": [
+              "top",
+              "person",
+              "organizationalPerson",
+              "user"
+            ],
+            "objectCategory": [
+              "person"
+            ],
+            "cn": [
+              "Bob Baker"
+            ],
+            "givenName": [
+              "Bob"
+            ],
+            "sn": [
+              "Baker"
+            ],
+            "displayName": [
+              "Bob Baker"
+            ],
+            "sAMAccountName": [
+              "bob"
+            ],
+            "userPrincipalName": [
+              "bob@contoso.local"
+            ],
+            "mail": [
+              "bob@contoso.local"
+            ],
+            "department": [
+              "Finance"
+            ],
+            "userAccountControl": [
+              512
+            ]
+          },
+          "_password": "Password123!"
+        },
+        {
+          "dn": "CN=Carol Chen,OU=Users,DC=contoso,DC=local",
+          "attributes": {
+            "objectClass": [
+              "top",
+              "person",
+              "organizationalPerson",
+              "user"
+            ],
+            "objectCategory": [
+              "person"
+            ],
+            "cn": [
+              "Carol Chen"
+            ],
+            "givenName": [
+              "Carol"
+            ],
+            "sn": [
+              "Chen"
+            ],
+            "displayName": [
+              "Carol Chen"
+            ],
+            "sAMAccountName": [
+              "carol"
+            ],
+            "userPrincipalName": [
+              "carol@contoso.local"
+            ],
+            "mail": [
+              "carol@contoso.local"
+            ],
+            "department": [
+              "IT"
+            ],
+            "userAccountControl": [
+              514
+            ]
+          },
+          "_password": "Password123!"
+        },
+        {
+          "dn": "CN=GG_IT_Admins,OU=Groups,DC=contoso,DC=local",
+          "attributes": {
+            "objectClass": [
+              "top",
+              "group"
+            ],
+            "objectCategory": [
+              "group"
+            ],
+            "cn": [
+              "GG_IT_Admins"
+            ],
+            "sAMAccountName": [
+              "GG_IT_Admins"
+            ],
+            "groupType": [
+              -2147483646
+            ],
+            "member": [
+              "CN=Alice Adams,OU=Users,DC=contoso,DC=local"
+            ]
+          }
+        },
+        {
+          "dn": "CN=GG_Finance,OU=Groups,DC=contoso,DC=local",
+          "attributes": {
+            "objectClass": [
+              "top",
+              "group"
+            ],
+            "objectCategory": [
+              "group"
+            ],
+            "cn": [
+              "GG_Finance"
+            ],
+            "sAMAccountName": [
+              "GG_Finance"
+            ],
+            "groupType": [
+              -2147483646
+            ],
+            "member": [
+              "CN=Bob Baker,OU=Users,DC=contoso,DC=local"
+            ]
+          }
+        },
+        {
+          "dn": "CN=GG_All_Staff,OU=Groups,DC=contoso,DC=local",
+          "attributes": {
+            "objectClass": [
+              "top",
+              "group"
+            ],
+            "objectCategory": [
+              "group"
+            ],
+            "cn": [
+              "GG_All_Staff"
+            ],
+            "sAMAccountName": [
+              "GG_All_Staff"
+            ],
+            "groupType": [
+              -2147483646
+            ],
+            "member": [
+              "CN=GG_IT_Admins,OU=Groups,DC=contoso,DC=local",
+              "CN=Bob Baker,OU=Users,DC=contoso,DC=local"
+            ]
+          }
+        },
+        {
+          "dn": "CN=PC-001,OU=Computers,DC=contoso,DC=local",
+          "attributes": {
+            "objectClass": [
+              "top",
+              "person",
+              "organizationalPerson",
+              "user",
+              "computer"
+            ],
+            "objectCategory": [
+              "computer"
+            ],
+            "cn": [
+              "PC-001"
+            ],
+            "name": [
+              "PC-001"
+            ],
+            "sAMAccountName": [
+              "PC-001$"
+            ],
+            "dNSHostName": [
+              "pc-001.contoso.local"
+            ],
+            "userAccountControl": [
+              4096
+            ]
+          }
+        }
+      ]
+    };
+
+    // Optional in-memory fixture for testing and custom simulations (no network request).
+    if (seed != null) this.DB = clone(seed);
     if (!Array.isArray(this.DB.entries)) throw new Error('DB.entries must be an array');
     this.options = Object.assign({ requireBind: false, allowWrites: true }, options || {});
     this.boundDN = null;
-    // Public instance method, as in the requested ActiveDirectory() interface.
-    this.LDAP = function (request, params) {
-      return ActiveDirectory.prototype.LDAP.call(this, request, params);
-    };
-  }
 
-  ActiveDirectory.prototype.LDAP = function (request, params) {
+    // Public LDAP protocol emulator: an instance-owned function, not a prototype proxy.
+    this.LDAP = function (request, params) {
     var req = typeof request === 'string' ? Object.assign({ operation: request }, params || {}) : request;
     if (!req || typeof req !== 'object') return result(CODES.protocolError, null, 'A request object is required');
     var op = String(req.operation || req.op || '').toLowerCase();
@@ -406,9 +654,11 @@
     } catch (err) {
       return result(CODES.protocolError, null, err.message);
     }
-  };
+    };
+  }
 
-  ActiveDirectory.sampleDB = sampleDB;
+  // Backwards-compatible utility: returns an independent snapshot of the inline seed.
+  ActiveDirectory.sampleDB = function () { return new ActiveDirectory().DB; };
   ActiveDirectory.RESULT_CODES = CODES;
   return ActiveDirectory;
 });
