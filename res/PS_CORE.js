@@ -1,4 +1,4 @@
-/* PowerShellJS v0.1 — browser-first, dependency-free, deliberately limited PowerShell simulator.
+/* PowerShellJS v0.2 — browser-first, dependency-free, deliberately limited PowerShell simulator.
  * No eval(), OS shell, host filesystem, remote requests or PowerShell subprocess.
  * CommonJS export is provided only for offline regression tests; no Node dependency.
  */
@@ -9,7 +9,17 @@
   if (root) root.PowerShellJS = exports;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
-  const VERSION = '0.1.0';
+  const VERSION = '0.2.0';
+  // Core is deliberately UI-independent. Browser globals are assigned by script tags;
+  // require() is used only in Node regression tests.
+  const ParserV2 = (typeof globalThis !== 'undefined' && globalThis.PowerShellParser) ||
+    (typeof require === 'function' ? require('./PS_PARSER.js') : null);
+  const AD = (typeof globalThis !== 'undefined' && globalThis.PowerShellAD) ||
+    (typeof require === 'function' ? require('./PS_AD.js') : null);
+  const ADCmds = (typeof globalThis !== 'undefined' && globalThis.PowerShellADCommands) ||
+    (typeof require === 'function' ? require('./PS_AD_COMMANDS.js') : null);
+  if (!ParserV2 || !AD || !ADCmds) throw new Error('Load PS_PARSER.js, PS_AD.js and PS_AD_COMMANDS.js before PS_CORE.js.');
+
   const MAX_SOURCE_LENGTH = 100000;
   const MAX_STATEMENTS = 500;
   const MAX_PIPELINE_ITEMS = 10000;
@@ -28,55 +38,6 @@
     let n = 0;
     while (pos - n - 1 >= 0 && src[pos - n - 1] === '`') n++;
     return n % 2 === 1;
-  }
-
-  function stripComments(src) {
-    let out = '', quote = null;
-    for (let i = 0; i < src.length; i++) {
-      const c = src[i];
-      if (quote) {
-        if (c === quote && !isEscaped(src, i)) {
-          if (quote === "'" && src[i + 1] === "'") { out += "''"; i++; continue; }
-          quote = null;
-        }
-        out += c;
-      } else if (c === "'" || c === '"') { quote = c; out += c; }
-      else if (c === '#' && !isEscaped(src, i)) {
-        while (i < src.length && src[i] !== '\n') i++;
-        if (i < src.length) out += '\n';
-      } else out += c;
-    }
-    return out;
-  }
-
-  /** Split at specified delimiters outside quotes, braces, and parentheses. */
-  function splitTopLevel(source, delimiters) {
-    let result = [], start = 0, quote = null, curly = 0, round = 0, line = 1, itemLine = 1;
-    for (let i = 0; i < source.length; i++) {
-      const c = source[i];
-      if (quote) {
-        if (c === quote && !isEscaped(source, i)) {
-          if (c === "'" && source[i + 1] === "'") { i++; continue; }
-          quote = null;
-        }
-      } else if (c === "'" || c === '"') quote = c;
-      else if (c === '{') curly++;
-      else if (c === '}') { curly--; if (curly < 0) throw new PSError('Unexpected closing brace.','ParserError'); }
-      else if (c === '(') round++;
-      else if (c === ')') { round--; if (round < 0) throw new PSError('Unexpected closing parenthesis.','ParserError'); }
-      else if (curly === 0 && round === 0 && delimiters.includes(c)) {
-        const text = source.slice(start, i).trim();
-        if (text) result.push({ text, line: itemLine });
-        start = i + 1;
-        itemLine = line + (c === '\n' ? 1 : 0);
-      }
-      if (c === '\n') line++;
-    }
-    if (quote) throw new PSError('Unterminated quoted string.','ParserError');
-    if (curly !== 0 || round !== 0) throw new PSError('Unbalanced braces or parentheses.','ParserError');
-    const tail = source.slice(start).trim();
-    if (tail) result.push({ text: tail, line: itemLine });
-    return result;
   }
 
   function tokenizeArgs(src) {
@@ -165,7 +126,7 @@
     const src = source.trim();
     const tokens = [];
     let i = 0;
-    const lex = /\s+|"(?:`.|[^"`])*"|'(?:''|[^'])*'|\$[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*|\d+(?:\.\d+)?|-eq\b|-ne\b|-gt\b|-ge\b|-lt\b|-le\b|-and\b|-or\b|[()+*\/,\-]|[^\s()+*\/,\-]+/iy;
+    const lex = /\s+|"(?:`.|[^"`])*"|'(?:''|[^'])*'|\$[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*|\d+(?:\.\d+)?|-eq\b|-ne\b|-gt\b|-ge\b|-lt\b|-le\b|-and\b|-or\b|-notlike\b|-like\b|-not\b|[()+*\/,\-]|[^\s()+*\/,\-]+/iy;
     while (i < src.length) {
       lex.lastIndex = i;
       const match = lex.exec(src);
@@ -174,13 +135,14 @@
       if (!/^\s+$/.test(match[0])) tokens.push(match[0]);
     }
     let cursor = 0;
-    const precedence = { '-or':1, '-and':2, '-eq':3, '-ne':3, '-gt':3, '-ge':3, '-lt':3, '-le':3, '+':4, '-':4, '*':5, '/':5 };
+    const precedence = { '-or':1, '-and':2, '-eq':3, '-ne':3, '-gt':3, '-ge':3, '-lt':3, '-le':3, '-like':3, '-notlike':3, '+':4, '-':4, '*':5, '/':5 };
     const peek = () => tokens[cursor];
     const next = () => tokens[cursor++];
     function primary() {
       const word = next();
       if (word === undefined) throw new PSError('Incomplete expression.','ParserError');
       if (word === '-') return -Number(parseExpr(6));
+      if (lower(word) === '-not') return !parseExpr(6);
       if (word === '(') {
         const value = parseExpr(0);
         if (next() !== ')') throw new PSError('Expected closing parenthesis.','ParserError');
@@ -209,6 +171,8 @@
           case '-ge': lhs = compare(lhs,rhs) >= 0; break;
           case '-lt': lhs = compare(lhs,rhs) < 0; break;
           case '-le': lhs = compare(lhs,rhs) <= 0; break;
+          case '-like': lhs = wildcardMatch(stringValue(lhs),stringValue(rhs));break;
+          case '-notlike': lhs = !wildcardMatch(stringValue(lhs),stringValue(rhs));break;
           case '-and': lhs = !!lhs && !!rhs; break;
           case '-or': lhs = !!lhs || !!rhs; break;
         }
@@ -221,26 +185,17 @@
     return value;
   }
 
+  function wildcardMatch(text,pattern) {
+    const escaped=pattern.split('*').map(s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('.*');
+    return new RegExp('^'+escaped+'$','i').test(text);
+  }
+
   function compare(a,b) {
     if (typeof a === 'number' && typeof b === 'number') return a-b;
     return stringValue(a).localeCompare(stringValue(b),undefined,{sensitivity:'accent'});
   }
 
-  function parse(source) {
-    if (typeof source !== 'string') throw new TypeError('PowerShell source must be a string.');
-    if (source.length > MAX_SOURCE_LENGTH) throw new PSError('Source exceeds maximum length.','ResourceLimit');
-    // Remove line continuations and comments, preserving statement lines.
-    const clean = stripComments(source.replace(/`\r?\n/g, ' ').replace(/\|[ \t]*\r?\n/g, '| ')).replace(/\r\n/g, '\n');
-    const statements = splitTopLevel(clean, ['\n',';']);
-    if (statements.length > MAX_STATEMENTS) throw new PSError('Too many statements.','ResourceLimit');
-    return statements.map(({text,line}) => {
-      const assignment = /^\$([A-Za-z_][\w]*)\s*=\s*([\s\S]+)$/.exec(text);
-      if (assignment) return {kind:'assignment', line, name:assignment[1], expression:assignment[2]};
-      const stages = splitTopLevel(text, ['|']).map(entry => ({source:entry.text}));
-      if (!stages.length) throw new PSError('Empty statement.','ParserError');
-      return {kind:'pipeline', line, stages};
-    });
-  }
+  function parse(source) { return ParserV2.parse(source); }
 
   class VirtualFS {
     constructor() { this.reset(); }
@@ -248,7 +203,7 @@
       this.items = new Map();
       this.cwd = 'C:\\Users\\Demo';
       ['C:\\','C:\\Users','C:\\Users\\Demo','C:\\Temp','C:\\Windows','C:\\Windows\\System32'].forEach(path => this.putDir(path));
-      this.write('C:\\Users\\Demo\\README.txt','PowerShellJS v0.1\nThis is a simulated filesystem.\n');
+      this.write('C:\\Users\\Demo\\README.txt','PowerShellJS v0.2\nThis is a simulated filesystem.\n');
       this.write('C:\\Temp\\example.txt','Hello from your browser-only PowerShell!\n');
       this.write('C:\\Windows\\version.txt','Simulated Windows Environment v0.1\n');
     }
@@ -319,7 +274,7 @@
   }
 
   class Session {
-    constructor() { this.fs = new VirtualFS(); this.variables = new Map(); }
+    constructor(options={}) { this.fs = new VirtualFS(); this.directorySeed = options.directoryEntries || null; this.directory = new AD.SimulatedDirectory(this.directorySeed); this.variables = new Map(); }
     getVariable(name) {
       const key = lower(name);
       if (key === 'pwd') return this.fs.cwd;
@@ -335,8 +290,8 @@
       if (['pwd','home','true','false','null'].includes(key)) throw new PSError('Variable is read-only: $'+name,'VariableIsReadOnly');
       this.variables.set(key,value);
     }
-    reset() { this.fs.reset(); this.variables.clear(); }
-    snapshot() { return {cwd:this.fs.cwd,variables:Object.fromEntries(this.variables),filesystem:this.fs.snapshot()}; }
+    reset() { this.fs.reset(); this.directory.reset(this.directorySeed); this.variables.clear(); }
+    snapshot() { return {cwd:this.fs.cwd,variables:Object.fromEntries(this.variables),filesystem:this.fs.snapshot(),directory:{base:this.directory.root,count:this.directory.all().length,entries:this.directory.snapshot()}}; }
   }
 
   function parseInvocation(source, session) {
@@ -369,10 +324,12 @@
   class PowerShellSimulator {
     constructor(options={}) {
       this.version=VERSION;
-      this.session=new Session();
+      this.session=new Session(options);
       this.commands=new Map();
       this.aliases=new Map();
+      this.functions=new Map();
       this._registerBuiltins();
+      ADCmds.registerADCommands(this);
       if (Array.isArray(options.commands)) options.commands.forEach(command=>this.registerCommand(command));
     }
     registerCommand(command) {
@@ -382,55 +339,92 @@
       for (const alias of (command.aliases || [])) this.aliases.set(lower(alias),name);
     }
     listCommands() { return [...this.commands.values()].map(({name,aliases=[],description=''}) => ({Name:name,Aliases:aliases.join(', '),Description:description})).sort((a,b)=>a.Name.localeCompare(b.Name)); }
-    reset() { this.session.reset(); }
+    reset() { this.session.reset(); this.functions.clear(); }
     getPrompt() { return 'PS ' + this.session.fs.cwd + '> '; }
     parse(source) { return parse(source); }
     getSession() { return this.session.snapshot(); }
     async execute(source) {
-      const output = [], errors = [], effects = [];
-      const pushOutput = line => {
-        const str=String(line);
-        if (output.join('\n').length + str.length > MAX_OUTPUT_CHARS) throw new PSError('Output limit exceeded.','ResourceLimit');
+      const output=[],errors=[],effects=[];
+      let printed=0,operations=0,lastObjects=[];
+      const pushOutput=line=>{
+        const str=String(line); printed+=str.length;
+        if(printed>MAX_OUTPUT_CHARS)throw new PSError('Output limit exceeded.','ResourceLimit');
         output.push(str);
       };
       let ast;
-      try { ast = this.parse(source); }
-      catch(err) { return {success:false,output,errors:[`${err.code || 'ParserError'}: ${err.message}`],effects,cwd:this.session.fs.cwd,objects:[]}; }
-      let lastObjects=[];
-      for (const statement of ast) {
-        try {
-          if (statement.kind === 'assignment') {
-            const value = evalExpression(statement.expression,this.session);
-            this.session.setVariable(statement.name,value);
-            lastObjects=[];
+      try{ast=this.parse(source);}catch(err){
+        return {success:false,output,errors:[`${err.code||'ParserError'}: ${err.message}${err.line?', line '+err.line:''}`],effects,cwd:this.session.fs.cwd,objects:[]};
+      }
+      const runNodes=async(nodes,emit=true,depth=0)=>{
+        if(depth>16)throw new PSError('Maximum execution depth exceeded.','ResourceLimit');
+        let last=[];
+        for(const node of nodes){
+          if(++operations>3000)throw new PSError('Execution operation limit exceeded.','ResourceLimit');
+          try{
+            if(node.kind==='assignment'){
+              const expr=node.expression.trim();let value;
+              // In PowerShell, assigning a command's pipeline output captures objects.
+              const isCommand=/^[A-Za-z][\w-]*(?:\s|$)/.test(expr) && !/^(true|false|null)$/i.test(expr);
+              if(isCommand){const pieces=ParserV2.partition(expr,['|']);
+                value=await runPipeline(pieces.map(x=>({source:x.text})),depth);
+                value=value.length===1?value[0]:value;
+              }else value=evalExpression(expr,this.session);
+              this.session.setVariable(node.name,value);last=[];
+            }else if(node.kind==='function'){
+              this.functions.set(lower(node.name),node);last=[];
+            }else if(node.kind==='if'){
+              const flag=evalExpression(node.condition,this.session);
+              last=await runNodes(flag?node.then:node.else,emit,depth+1);
+            }else if(node.kind==='foreach'){
+              let collection;
+              const expr=node.collection.trim();
+              if(/^[A-Za-z][\w-]*\s/.test(expr))collection=await runPipeline(ParserV2.partition(expr,['|']).map(x=>({source:x.text})),depth);
+              else collection=evalExpression(expr,this.session);
+              if(collection==null)collection=[];
+              if(!Array.isArray(collection))collection=[collection];
+              if(collection.length>500)throw new PSError('Foreach iteration limit exceeded.','ResourceLimit');
+              last=[];
+              for(const item of collection){this.session.setVariable(node.name,item);last=await runNodes(node.body,emit,depth+1);}
+            }else if(node.kind==='pipeline'){
+              last=await runPipeline(node.stages,depth);
+              if(emit)for(const line of formatObjects(last))pushOutput(line);
+            }else throw new PSError('Unsupported AST node: '+node.kind,'EngineContractError');
+          }catch(error){error.psLine=error.psLine||node.line;throw error;}
+        }
+        return last;
+      };
+      const runPipeline=async(stages,depth=0)=>{
+        let stream=[];
+        for(const stage of stages){
+          const trimmed=stage.source.trim();
+          if(/^\$[A-Za-z_][\w]*(?:\.[\w]+)*$/.test(trimmed)||/^(?:-?\d+(?:\.\d+)?|\(.+\)|\$true|\$false)$/i.test(trimmed)){
+            const value=evalExpression(trimmed,this.session);stream=Array.isArray(value)?value:[value];continue;
+          }
+          const args=parseInvocation(trimmed,this.session);
+          const commandName=this.aliases.get(args.command)||args.command;
+          if(this.functions.has(commandName)){
+            const fn=this.functions.get(commandName),saved=[];
+            for(let i=0;i<fn.params.length;i++){
+              const key=lower(fn.params[i]);saved.push({key,has:this.session.variables.has(key),value:this.session.variables.get(key)});
+              this.session.variables.set(key,args.positionals[i]??null);
+            }
+            try{stream=await runNodes(fn.body,false,depth+1);}
+            finally{for(const v of saved){if(v.has)this.session.variables.set(v.key,v.value);else this.session.variables.delete(v.key);}}
             continue;
           }
-          let stream=[];
-          for (const stage of statement.stages) {
-            const trimmed=stage.source.trim();
-            if (/^\$[A-Za-z_][\w]*(?:\.[\w]+)*$/.test(trimmed) || /^(?:\d+(?:\.\d+)?|\(.+\))$/.test(trimmed)) {
-              stream=[evalExpression(trimmed,this.session)];
-              continue;
-            }
-            const args=parseInvocation(trimmed,this.session);
-            const commandName=this.aliases.get(args.command) || args.command;
-            const command=this.commands.get(commandName);
-            if (!command) throw new PSError(`The term '${args.command}' is not recognized as a simulated cmdlet. Try Get-Command.`, 'CommandNotFound');
-            const step=await command.run({args,input:stream,session:this.session,fs:this.session.fs,engine:this});
-            if (!step || !Array.isArray(step.values)) throw new PSError(`Invalid result from '${command.name}' cmdlet.`,'EngineContractError');
-            stream=step.values;
-            if (stream.length > MAX_PIPELINE_ITEMS) throw new PSError('Pipeline item limit exceeded.','ResourceLimit');
-            for (const message of step.messages || []) pushOutput(itemText(message));
-            effects.push(...(step.effects || []));
-          }
-          lastObjects=stream;
-          for (const line of formatObjects(stream)) pushOutput(line);
-        } catch(err) {
-          errors.push(`Line ${statement.line} [${err.code || 'RuntimeError'}]: ${err.message}`);
-          lastObjects=[];
-          break; // stop this script on first error in v0.1
+          const command=this.commands.get(commandName);
+          if(!command)throw new PSError(`The term '${args.command}' is not recognized as a simulated cmdlet. Try Get-Command.`, 'CommandNotFound');
+          const step=await command.run({args,input:stream,session:this.session,fs:this.session.fs,engine:this});
+          if(!step||!Array.isArray(step.values))throw new PSError(`Invalid result from '${command.name}'.`,'EngineContractError');
+          stream=step.values;
+          if(stream.length>MAX_PIPELINE_ITEMS)throw new PSError('Pipeline item limit exceeded.','ResourceLimit');
+          for(const message of step.messages||[])pushOutput(itemText(message));
+          effects.push(...(step.effects||[]));
         }
-      }
+        return stream;
+      };
+      try{lastObjects=await runNodes(ast);}
+      catch(err){errors.push(`Line ${err.psLine||1} [${err.code||'RuntimeError'}]: ${err.message}`);lastObjects=[];}
       return {success:errors.length===0,output,errors,effects,cwd:this.session.fs.cwd,objects:lastObjects};
     }
     _registerBuiltins() {
@@ -517,7 +511,7 @@
       });
       reg('Get-Help',['help','man'], 'Display help for a simulated command.', async({args,engine})=> {
         const name=getArg(args,'name',0,undefined);
-        if(!name) return result(['PowerShellJS v0.1: Get-Command lists implemented cmdlets. Use Get-Help <cmdlet>.']);
+        if(!name) return result(['PowerShellJS v0.2: Get-Command lists implemented cmdlets. Use Get-Help <cmdlet>.']);
         const lookup=engine.aliases.get(lower(name))||lower(name);
         const cmd=engine.commands.get(lookup);
         if(!cmd) throw new PSError('No simulated help exists for: '+name,'CommandNotFound');

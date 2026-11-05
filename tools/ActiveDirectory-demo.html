@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ActiveDirectoryJS v0.1 — LDAP emulator</title>
+<style>
+  :root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }
+  * { box-sizing: border-box; }
+  body { background:#0b1220; color:#e8edf5; margin:0; padding:28px; }
+  main { max-width:1150px; margin:auto; }
+  header { display:flex; justify-content:space-between; flex-wrap:wrap; align-items:center; gap:12px; margin-bottom:24px; }
+  h1 { font-size:23px; letter-spacing:-.5px; margin:0 0 6px; }
+  .subtitle { color:#94a3b8; font-size:13px; }
+  .chip { color:#93c5fd; border:1px solid #25518b; background:#102849; padding:8px 11px; border-radius:18px; font-size:12px; }
+  .columns { display:grid; grid-template-columns: 1fr 1fr; gap:18px; }
+  section { min-width:0; border:1px solid #243348; background:#111c2d; border-radius:13px; padding:19px; }
+  h2 { margin:0 0 16px; font-size:15px; }
+  label { display:block; margin:0 0 8px; font-size:12px; color:#bbcadd; }
+  select, input[type=file], textarea { font:inherit; color:#f0f6ff; background:#0b1423; border:1px solid #34435d; border-radius:8px; padding:10px; width:100%; }
+  select { margin-bottom:14px; }
+  textarea { min-height:310px; resize:vertical; line-height:1.55; font-size:12px; tab-size:2; }
+  pre { white-space:pre-wrap; overflow-wrap:anywhere; background:#0b1423; border:1px solid #34435d; padding:13px; border-radius:9px; font-size:12px; line-height:1.55; min-height:385px; max-height:600px; overflow:auto; }
+  .controls { display:flex; gap:9px; flex-wrap:wrap; margin-top:14px; }
+  button { cursor:pointer; background:#2563eb; color:#fff; border:1px solid #3b82f6; border-radius:7px; padding:9px 13px; font:inherit; font-size:12px; }
+  button.secondary { background:#1b2a40; border-color:#34435d; }
+  button:hover { filter:brightness(1.15); }
+  .status { color:#93c5fd; font-size:12px; margin-top:12px; }
+  .muted { font-size:12px; color:#94a3b8; line-height:1.6; }
+  .footer { margin-top:18px; }
+  code { color:#a5c5ff; }
+  @media(max-width:780px){ body{padding:14px;} .columns{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div><h1>ActiveDirectoryJS <span style="color:#60a5fa">v0.1</span></h1>
+    <div class="subtitle">Standalone browser emulator — LDAP-style API / JSON-backed directory</div></div>
+  <span class="chip" id="summary">Directory initialized</span>
+</header>
+<div class="columns">
+<section>
+  <h2>LDAP request</h2>
+  <label for="preset">Example request</label>
+  <select id="preset">
+    <option value="users">Search: all user accounts</option>
+    <option value="it">Search: IT department</option>
+    <option value="groups">Search: security groups</option>
+    <option value="nested">Search: transitive nested group membership</option>
+    <option value="disabled">Search: disabled accounts (AD bitwise matching)</option>
+    <option value="root">Search: RootDSE</option>
+    <option value="bind">Bind: Alice Adams</option>
+    <option value="add">Add: new group</option>
+    <option value="modify">Modify: Bob's department</option>
+    <option value="compare">Compare: Alice's department</option>
+    <option value="delete">Delete: example group</option>
+  </select>
+  <label for="request">Edit request JSON and execute <code>oAD.LDAP(request)</code></label>
+  <textarea id="request" spellcheck="false"></textarea>
+  <div class="controls"><button id="run">Run LDAP()</button><button class="secondary" id="reset">Reset directory</button></div>
+  <div class="status" id="status">Ready</div>
+</section>
+<section>
+  <h2>LDAP response</h2>
+  <pre id="output" aria-live="polite">Select an example and run the request.</pre>
+  <div class="muted">Results are returned with an LDAP-style result code, message, and (for searches) a list of entries. Attribute values are arrays.</div>
+</section>
+</div>
+<section class="footer">
+  <h2>Directory dataset</h2>
+  <p class="muted">The default directory is embedded in <code>ActiveDirectory.js</code>. You can load another JSON directory from your computer (no upload or network required), or export the current in-memory dataset including edits. Sample passwords are fake demonstration credentials.</p>
+  <div class="controls"><input id="file" type="file" accept="application/json,.json" style="max-width:340px"><button class="secondary" id="export">Export current DB.json</button></div>
+</section>
+</main>
+<script src="../res/ActiveDirectory.js"></script>
+<script>
+(function () {
+  'use strict';
+  var oAD = new ActiveDirectory();
+  window.oAD = oAD; // inspect the instance from browser developer tools
+  var ROOT='DC=contoso,DC=local';
+  var examples = {
+    users: { operation:'search',baseDN:ROOT,scope:'sub',filter:'(&(objectCategory=person)(objectClass=user))',attributes:['cn','sAMAccountName','department','memberOf','userAccountControl'] },
+    it: { operation:'search',baseDN:ROOT,scope:'sub',filter:'(&(objectCategory=person)(department=IT))',attributes:['cn','mail','memberOf'] },
+    groups: { operation:'search',baseDN:'OU=Groups,'+ROOT,scope:'one',filter:'(objectClass=group)',attributes:['cn','member','groupType'] },
+    nested: { operation:'search',baseDN:ROOT,scope:'sub',filter:'(&(objectClass=user)(memberOf:1.2.840.113556.1.4.1941:=CN=GG_All_Staff,OU=Groups,'+ROOT+'))',attributes:['cn','memberOf'] },
+    disabled: { operation:'search',baseDN:ROOT,scope:'sub',filter:'(&(objectCategory=person)(userAccountControl:1.2.840.113556.1.4.803:=2))',attributes:['cn','userAccountControl'] },
+    root: { operation:'search',baseDN:'',scope:'base',filter:'(objectClass=*)',attributes:['defaultNamingContext','dnsHostName','supportedLDAPVersion'] },
+    bind: { operation:'bind',username:'alice',password:'Password123!' },
+    add: { operation:'add',dn:'CN=GG_New_Team,OU=Groups,'+ROOT,attributes:{objectClass:['top','group'],objectCategory:['group'],cn:['GG_New_Team'],sAMAccountName:['GG_New_Team'],member:[]} },
+    modify: { operation:'modify',dn:'CN=Bob Baker,OU=Users,'+ROOT,changes:[{operation:'replace',attribute:'department',values:['Operations']}] },
+    compare: { operation:'compare',dn:'CN=Alice Adams,OU=Users,'+ROOT,attribute:'department',value:'IT' },
+    delete: { operation:'delete',dn:'CN=GG_New_Team,OU=Groups,'+ROOT }
+  };
+  var $ = function (id) { return document.getElementById(id); };
+  function summary() { $('summary').textContent=oAD.DB.domain+' · '+oAD.DB.entries.length+' entries'; }
+  function showPreset() { $('request').value = JSON.stringify(examples[$('preset').value], null, 2); }
+  $('preset').addEventListener('change',showPreset);
+  $('run').addEventListener('click',function () {
+    try {
+      var request=JSON.parse($('request').value), response=oAD.LDAP(request);
+      $('output').textContent=JSON.stringify(response,null,2);
+      $('status').textContent=(response.success?'OK':'LDAP result')+' · '+response.code+' ('+response.resultCode+')';
+      summary();
+    } catch (error) { $('status').textContent='Invalid JSON'; $('output').textContent=String(error); }
+  });
+  $('reset').addEventListener('click',function () {
+    oAD=new ActiveDirectory(); window.oAD=oAD; summary();
+    $('output').textContent='Directory reset to sample data.'; $('status').textContent='Ready';
+  });
+  $('file').addEventListener('change',async function (event) {
+    var file=event.target.files[0]; if (!file) return;
+    try {
+      var data=JSON.parse(await file.text());
+      if (!data.domain || !data.baseDN || !Array.isArray(data.entries)) throw new Error('Expected {domain, baseDN, entries[]}');
+      oAD=new ActiveDirectory(data); window.oAD=oAD; summary();
+      $('status').textContent='Loaded '+file.name; $('output').textContent='Custom JSON directory loaded.';
+    } catch (error) { $('status').textContent='Import failed: '+error.message; }
+  });
+  $('export').addEventListener('click',function () {
+    var blob=new Blob([JSON.stringify(oAD.DB,null,2)],{type:'application/json'});
+    var url=URL.createObjectURL(blob), link=document.createElement('a');
+    link.href=url;link.download='ActiveDirectory-current.json';link.click();
+    setTimeout(function(){URL.revokeObjectURL(url);},1000);
+  });
+  showPreset();summary();
+})();
+</script>
+</body>
+</html>

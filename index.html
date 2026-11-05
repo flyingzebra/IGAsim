@@ -1,91 +1,100 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>PowerShellJS v0.1 — Browser Simulator</title>
-  <link rel="stylesheet" href="COM_TERM.css">
-  <link rel="stylesheet" href="PS_APP.css">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PowerShellJS v0.2 — Active Directory Sandbox</title>
+  <link rel="stylesheet" href="COM_TERM.css"><link rel="stylesheet" href="PS_APP.css">
 </head>
 <body>
-  <main class="page">
-    <header class="top">
-      <div><h1>PowerShellJS <span class="mini">v0.1</span></h1>
-        <p class="subtitle">Client-side PowerShell-inspired interpreter · simulated files · no operating-system access</p></div>
-      <span class="tag">100% offline • No backend</span>
-    </header>
-    <div class="layout">
-      <section class="panel" aria-label="PowerShell terminal">
-        <div class="panelhead"><h2>Terminal</h2><div class="controls"><span id="status" class="status" aria-live="polite">Ready</span><button id="reset" title="Reset variables and virtual files">Reset session</button></div></div>
-        <div class="terminal-shell"><div id="terminal" aria-label="Command terminal"></div></div>
-      </section>
-      <section class="panel" aria-label="PowerShell script editor">
-        <div class="panelhead"><h2>Script editor</h2><span class="mini">Multiline .ps1 sandbox</span></div>
-        <div class="sample-bar" aria-label="Example scripts">
-          <button type="button" data-example="hello">Variables</button>
-          <button type="button" data-example="files">Virtual files</button>
-          <button type="button" data-example="pipeline">Pipelines</button>
-        </div>
-        <label class="sr-only" for="script">PowerShell script</label>
-        <textarea id="script" class="editor" autocomplete="off" spellcheck="false"># Your first browser-only PowerShell script
-$name = "Developer"
-$count = 2 + 3
-Write-Host "Welcome, $name!"
-Write-Output "2 + 3 = $count"
-Get-Location
-Get-ChildItem</textarea>
-        <div class="toolbar">
-          <button class="primary" type="button" id="run">Run script</button>
-          <button type="button" id="copy">Copy script</button>
-          <span class="status">Ctrl/Cmd + Enter to run</span>
-        </div>
-      </section>
+<main class="page">
+  <header class="top">
+    <div>
+      <h1>PowerShellJS <span class="mini">v0.2</span></h1>
+      <p class="subtitle">Offline PowerShell subset · AST-based script structure · simulated Active Directory + LDAP search</p>
     </div>
-    <section class="notes" aria-label="Simulator information">
-      <p><strong>Start:</strong> Type <code>Get-Command</code>, <code>Get-Help Get-ChildItem</code>, <code>Get-ChildItem</code>, <code>Get-Content README.txt</code>, or run a sample script.</p>
-      <p><strong>Boundary:</strong> This is a subset simulator, not Microsoft PowerShell. Files exist only in memory; unknown commands, advanced syntax, external tools and OS access are not supported. Reset restores the example environment.</p>
+    <span class="tag">LOCAL SANDBOX · NO LDAP SERVER</span>
+  </header>
+  <div class="directory-strip" aria-label="Directory environment">
+    <div><strong>Simulated domain</strong><span>corp.example.com</span></div>
+    <div><strong>Base DN</strong><span>DC=corp,DC=example,DC=com</span></div>
+    <div><strong>Directory objects</strong><span id="entry-count">—</span></div>
+    <div><strong>Execution</strong><span>In-memory · no network</span></div>
+  </div>
+  <div class="layout">
+    <section class="panel" aria-label="PowerShell terminal">
+      <div class="panelhead"><h2>PowerShell terminal</h2><div class="controls"><span id="status" class="status" aria-live="polite">Ready</span><button id="reset" type="button" title="Reset variables, virtual files, simulated AD objects, and LDAP query log">Reset sandbox</button></div></div>
+      <div class="terminal-shell"><div id="terminal" aria-label="Interactive PowerShell terminal"></div></div>
+      <div class="panel-foot">Try <code>Get-ADUser -Filter *</code> or <code>Get-Command -Name *AD*</code></div>
     </section>
-  </main>
-  <script src="COM_TERM.js"></script>
-  <script src="PS_CORE.js"></script>
-  <script src="PS_TERMINAL_ADAPTER.js"></script>
-  <script>
-    (function () {
-      'use strict';
-      const registry = new PowerShellTerminal.EngineRegistry();
-      registry.register('builtin-v0.1', () => new PowerShellJS.PowerShellSimulator());
-      const terminal = new TERMINAL({
-        container:'terminal', storageKey:'PowerShellJS_v01_history',
-        welcome:'PowerShellJS v0.1 — simulated session. Type Get-Command.\n',
-        prompt:'PS C:\\Users\\Demo',separator:'&gt; ', preserveWhitespace:true
-      });
-      const status = document.querySelector('#status');
-      const adapter = new PowerShellTerminal.TerminalEngineAdapter(terminal,registry.create('builtin-v0.1'),{
-        onStatus: value => {status.textContent = value;}
-      });
-      const editor=document.querySelector('#script');
-      const samples={
-        hello: '# Variables, interpolation and arithmetic\n$name = "Ada"\n$count = 5 * 3\nWrite-Host "Hello, $name"\nWrite-Output "Result: $count"\n$count',
-        files: '# Files are simulated, not written to your computer\nGet-Location\nGet-ChildItem C:\\Temp\nNew-Item -Path C:\\Temp\\notes.txt -ItemType File\nSet-Content -Path C:\\Temp\\notes.txt -Value "Saved in virtual memory"\nGet-Content C:\\Temp\\notes.txt\nTest-Path C:\\Temp\\notes.txt',
-        pipeline: '# Objects flow between supported cmdlets\nGet-ChildItem C:\\Users\\Demo | Where-Object { $_.Length -gt 10 } | Select-Object Name,Length\nGet-Command | Sort-Object -Property Name | Select-Object Name'
-      };
-      document.querySelector('#run').addEventListener('click',()=>adapter.submit(editor.value));
-      document.querySelector('#reset').addEventListener('click',()=>adapter.reset());
-      document.querySelector('#copy').addEventListener('click',async()=>{
-        try {await navigator.clipboard.writeText(editor.value);status.textContent='Copied';}
-        catch (_) {editor.focus();editor.select();status.textContent='Select and copy script';}
-      });
-      document.querySelectorAll('[data-example]').forEach(button=>button.addEventListener('click',()=>{editor.value=samples[button.dataset.example];editor.focus();}));
-      editor.addEventListener('keydown',event=>{
-        if(event.key==='Enter' && (event.ctrlKey || event.metaKey)) {event.preventDefault();adapter.submit(editor.value);}
-        if(event.key==='Tab' && !event.shiftKey) {
-          event.preventDefault();const a=editor.selectionStart,b=editor.selectionEnd;
-          editor.setRangeText('  ',a,b,'end');
-        }
-      });
-      // Deliberately export a small development API without binding it to COM_TERM internals.
-      window.PowerShellJSApp={registry,adapter,terminal,get engine(){return adapter.engine;}};
-    })();
-  </script>
+    <section class="panel" aria-label="PowerShell script editor">
+      <div class="panelhead"><h2>Script editor</h2><span class="mini">PowerShell subset / .ps1</span></div>
+      <nav class="sample-bar" aria-label="Sample scripts">
+        <button type="button" data-example="adUsers">AD users</button>
+        <button type="button" data-example="ldap">LDAP filter</button>
+        <button type="button" data-example="groups">Group membership</button>
+        <button type="button" data-example="modify">Modify AD</button>
+        <button type="button" data-example="logic">If / foreach</button>
+        <button type="button" data-example="files">Virtual files</button>
+      </nav>
+      <label class="sr-only" for="script">PowerShell script source</label>
+      <textarea id="script" class="editor" spellcheck="false" autocomplete="off"># Search a simulated Active Directory
+Get-ADUser -Filter { Enabled -eq $true } -Properties Department |
+  Where-Object { $_.Department -eq "IT" } |
+  Select-Object Name,SamAccountName,Department</textarea>
+      <div class="toolbar"><button class="primary" id="run" type="button">Run script</button><button id="inspect" type="button">Inspect AST</button><button id="copy" type="button">Copy script</button><span class="status">Ctrl/Cmd + Enter to run</span></div>
+      <details class="ast-details" id="ast-details"><summary>Parsed syntax tree (AST)</summary><pre id="ast-output" class="ast-output">Click Inspect AST to see the structural parser output.</pre></details>
+    </section>
+  </div>
+  <section class="notes">
+    <p><strong>Two different pipelines:</strong> <code>-LDAPFilter</code> and <code>Search-LDAP</code> evaluate LDAP expressions in the simulated directory; the PowerShell <code>|</code> operator passes JavaScript objects between cmdlets. Neither opens a real LDAP connection.</p>
+    <p><strong>Simulated changes:</strong> <code>Set-ADUser</code>, <code>Enable-ADAccount</code>, <code>Disable-ADAccount</code> and group membership commands modify in-memory data only. Click <strong>Reset sandbox</strong> to restore examples.</p>
+    <p><strong>Limits:</strong> This is a deliberately incomplete PowerShell and LDAP implementation. No real AD server, no authentication, AD replication, ACLs, LDAP bind, network, or OS execution. Do not use it to validate production scripts.</p>
+  </section>
+</main>
+<script src="COM_TERM.js"></script>
+<script src="PS_PARSER.js"></script>
+<script src="PS_AD.js"></script>
+<script src="PS_AD_COMMANDS.js"></script>
+<script src="PS_CORE.js"></script>
+<script src="PS_TERMINAL_ADAPTER.js"></script>
+<script>
+(function(){
+ 'use strict';
+ const registry=new PowerShellTerminal.EngineRegistry();
+ registry.register('powershelljs-0.2',()=>new PowerShellJS.PowerShellSimulator());
+ const terminal=new TERMINAL({container:'terminal',storageKey:'PowerShellJS_v02_history',welcome:'PowerShellJS v0.2 — simulated Active Directory / LDAP sandbox.\nUse Get-ADRootDSE, Get-ADUser -Filter * or Get-Help Search-LDAP.\n',prompt:'PS C:\\Users\\Demo',separator:'&gt; ',preserveWhitespace:true});
+ const status=document.getElementById('status'),editor=document.getElementById('script'),entryCount=document.getElementById('entry-count');
+ const adapter=new PowerShellTerminal.TerminalEngineAdapter(terminal,registry.create('powershelljs-0.2'),{onStatus:value=>{status.textContent=value;}});
+ const samples={
+  adUsers:'# PowerShell AD cmdlet filter + object pipeline\nGet-ADUser -Filter { Enabled -eq $true } -Properties Department,Mail |\n  Where-Object { $_.Department -eq "Finance" } |\n  Select-Object Name,SamAccountName,Department,Mail',
+  ldap:'# RFC 4515-style LDAP assertions interpreted in memory\nSearch-LDAP -BaseDN "OU=Users,DC=corp,DC=example,DC=com" -Scope Subtree -Filter "(&(objectCategory=person)(department=IT)(mail=*))" -Attributes cn,mail,department\nGet-LDAPQueryLog | Select-Object Filter,ResultCount',
+  groups:'# Group nesting and AD transitive membership\nGet-ADGroup -Filter "Name -like \'BR_*\'" | Select-Object Name\nGet-ADGroupMember -Identity APP_Reporting -Recursive | Select-Object Name,SamAccountName\nGet-ADPrincipalGroupMembership -Identity mia.jansen | Select-Object Name',
+  modify:'# Modify the fictional directory (reset restores original data)\nSet-ADUser -Identity leo.chen -Department Operations\nAdd-ADGroupMember -Identity BR_Operations -Members leo.chen\nGet-ADUser -Identity leo.chen -Properties Department\nGet-ADGroupMember -Identity BR_Operations',
+  logic:'# Capture command objects; control flow and functions\n$users = Get-ADUser -Filter "Department -eq \'IT\'" -Properties Department\nfunction ShowUser($u) { Write-Output $u.SamAccountName }\nforeach ($u in $users) {\n  if ($u.Enabled -eq $true) { ShowUser $u }\n}',
+  files:'# Original virtual Windows file system still works\nGet-Location\nGet-ChildItem C:\\Temp\nSet-Content C:\\Temp\\hello.txt -Value "Saved in memory"\nGet-Content C:\\Temp\\hello.txt'
+ };
+ function refreshStats(){entryCount.textContent=adapter.engine.session.directory.all().length+' objects';}
+ document.getElementById('run').addEventListener('click',async()=>{await adapter.submit(editor.value);refreshStats();});
+ document.getElementById('reset').addEventListener('click',async()=>{await adapter.reset();refreshStats();});
+ document.getElementById('inspect').addEventListener('click',()=>{
+  const target=document.getElementById('ast-output'),details=document.getElementById('ast-details');
+  try{target.textContent=JSON.stringify(adapter.engine.parse(editor.value),null,2);status.textContent='AST parsed';}
+  catch(error){target.textContent=`${error.code||'ParserError'}: ${error.message}`;status.textContent='Parse error';}
+  details.open=true;
+ });
+ document.getElementById('copy').addEventListener('click',async()=>{
+  try{await navigator.clipboard.writeText(editor.value);status.textContent='Copied';}
+  catch(_){editor.focus();editor.select();status.textContent='Select script to copy';}
+ });
+ document.querySelectorAll('[data-example]').forEach(button=>button.addEventListener('click',()=>{editor.value=samples[button.dataset.example];editor.focus();}));
+ editor.addEventListener('keydown',event=>{
+  if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();adapter.submit(editor.value).then(refreshStats);}
+  if(event.key==='Tab'&&!event.shiftKey){event.preventDefault();editor.setRangeText('  ',editor.selectionStart,editor.selectionEnd,'end');}
+ });
+ refreshStats();
+ // Minimal inspection surface for automated browser smoke tests.
+ globalThis.PowerShellJSApp={registry,terminal,adapter,editor,examples:samples};
+})();
+</script>
 </body>
 </html>
