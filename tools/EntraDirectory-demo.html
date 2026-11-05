@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>IGAsim — Entra Graph API Demo</title>
+    <style>
+        :root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; }
+        body { margin: 0; background: #0b1221; color: #e5edf7; }
+        main { max-width: 1000px; padding: 28px 20px 60px; margin: auto; }
+        h1 { margin: 0; font-size: 28px; }
+        p { color: #a4b5cc; }
+        .panel { background: #142035; border: 1px solid #30415a; border-radius: 12px; padding: 18px; }
+        .layout { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.1fr); gap: 16px; }
+        label { display: block; margin: 12px 0 5px; color: #d1d9e8; font-weight: 600; }
+        select, input, textarea { box-sizing: border-box; width: 100%; border: 1px solid #445875;
+            border-radius: 7px; background: #0a1527; color: #e5edf7; font: 13px/1.4 ui-monospace,monospace;
+            padding: 10px; }
+        textarea { resize: vertical; min-height: 180px; }
+        select { font-family: system-ui,sans-serif; }
+        button { border: 1px solid #476184; border-radius: 7px; padding: 10px 17px;
+            background: #365c93; color: white; font: inherit; cursor: pointer; }
+        button.secondary { background: #23314a; }
+        button:hover { filter: brightness(1.15); }
+        .actions { display: flex; gap: 9px; margin-top: 14px; flex-wrap: wrap; }
+        .output { white-space: pre-wrap; overflow: auto; min-height: 320px; max-height: 65vh;
+            border: 1px solid #30415a; border-radius: 8px; padding: 14px; background: #08101f;
+            color: #d7e4f5; font: 12px/1.5 ui-monospace,monospace; }
+        .status { font: 600 13px system-ui,sans-serif; margin-top: 12px; color: #8fd3a2; }
+        code { color: #93c5fd; }
+        @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Microsoft Entra ID — simulated Graph API</h1>
+    <p>Standalone, browser-only IGAsim demo. All data stays in memory. No Entra tenant, network access or credentials are involved.</p>
+    <div class="layout">
+        <section class="panel" aria-label="Request editor">
+            <label for="examples">Example request</label>
+            <select id="examples"></select>
+            <label for="method">HTTP method</label>
+            <select id="method">
+                <option>GET</option><option>POST</option><option>PATCH</option><option>DELETE</option>
+            </select>
+            <label for="endpoint">Graph endpoint</label>
+            <input id="endpoint" spellcheck="false" value="/v1.0/users">
+            <label for="body">JSON body (for POST / PATCH)</label>
+            <textarea id="body" spellcheck="false" aria-label="JSON request body"></textarea>
+            <div class="actions">
+                <button id="send" type="button">Send simulated request</button>
+                <button id="reset" class="secondary" type="button">Reset tenant</button>
+            </div>
+            <div id="status" class="status" role="status">Ready</div>
+        </section>
+        <section class="panel" aria-label="Graph response">
+            <label for="output">Graph response (status, headers, body)</label>
+            <pre id="output" class="output" aria-live="polite">Select an example and send the request.</pre>
+        </section>
+    </div>
+    <p>The console also exposes <code>oEntra</code> for manual experiments, e.g.
+        <code>oEntra.Graph('GET', '/v1.0/groups')</code>. See <code>docs/README-ENTRA_CORE.md</code> for the API contract and limitations.</p>
+</main>
+<script src="../res/ENTRA_CORE.js"></script>
+<script>
+    var oEntra = new EntraDirectory();
+    var examples = [
+        { label: 'List users', method: 'GET', endpoint: '/v1.0/users', body: '' },
+        { label: 'IT users (OData filter)', method: 'GET',
+          endpoint: "/v1.0/users?$filter=department eq 'IT'&$select=id,displayName,department", body: '' },
+        { label: 'List groups', method: 'GET', endpoint: '/v1.0/groups', body: '' },
+        { label: 'Nested group members', method: 'GET',
+          endpoint: '/v1.0/groups/f0000000-0000-4000-8000-000000000202/transitiveMembers', body: '' },
+        { label: 'First user page (nextLink)', method: 'GET', endpoint: '/v1.0/users?$top=1', body: '' },
+        { label: 'Directory roles', method: 'GET', endpoint: '/v1.0/directoryRoles', body: '' },
+        { label: 'Applications', method: 'GET', endpoint: '/v1.0/applications', body: '' },
+        { label: 'Disable Ada (PATCH)', method: 'PATCH',
+          endpoint: '/v1.0/users/f0000000-0000-4000-8000-000000000101',
+          body: '{"accountEnabled":false}' },
+        { label: 'Add Ben to SG-IT (POST $ref)', method: 'POST',
+          endpoint: '/v1.0/groups/f0000000-0000-4000-8000-000000000201/members/$ref',
+          body: '{"@odata.id":"https://graph.microsoft.com/v1.0/directoryObjects/f0000000-0000-4000-8000-000000000102"}' }
+    ];
+    var exampleSelect = document.getElementById('examples');
+    var methodSelect = document.getElementById('method');
+    var endpointInput = document.getElementById('endpoint');
+    var bodyInput = document.getElementById('body');
+    var output = document.getElementById('output');
+    var status = document.getElementById('status');
+
+    for (var index = 0; index < examples.length; index++)
+    {
+        var option = document.createElement('option');
+        option.value = String(index);
+        option.textContent = examples[index].label;
+        exampleSelect.appendChild(option);
+    }
+    function applyExample()
+    {
+        var example = examples[Number(exampleSelect.value)];
+        methodSelect.value = example.method;
+        endpointInput.value = example.endpoint;
+        bodyInput.value = example.body;
+    }
+    exampleSelect.addEventListener('change', applyExample);
+    document.getElementById('send').addEventListener('click', function()
+    {
+        var request = { headers: { ConsistencyLevel: 'eventual' } };
+        try
+        {
+            if (bodyInput.value.trim()) request.body = JSON.parse(bodyInput.value);
+            var response = oEntra.Graph(methodSelect.value, endpointInput.value, request);
+            output.textContent = JSON.stringify(response, null, 2);
+            status.textContent = 'Simulated HTTP ' + response.status;
+            status.style.color = response.status >= 400 ? '#f8a6a6' : '#8fd3a2';
+        }
+        catch (error)
+        {
+            status.textContent = 'Invalid JSON body';
+            status.style.color = '#f8a6a6';
+            output.textContent = String(error.message || error);
+        }
+    });
+    document.getElementById('reset').addEventListener('click', function()
+    {
+        oEntra.Reset();
+        status.textContent = 'Fictional tenant reset';
+        status.style.color = '#8fd3a2';
+        output.textContent = 'Directory state restored to the original inline fixture.';
+    });
+    applyExample();
+</script>
+</body>
+</html>
