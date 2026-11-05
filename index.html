@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>PowerShellJS v0.2 — Active Directory Sandbox</title>
-  <link rel="stylesheet" href="COM_TERM.css"><link rel="stylesheet" href="PS_APP.css">
+  <link rel="stylesheet" href="res/COM_TERM.css"><link rel="stylesheet" href="res/PS_APP.css">
 </head>
 <body>
 <main class="page">
@@ -51,12 +51,12 @@ Get-ADUser -Filter { Enabled -eq $true } -Properties Department |
     <p><strong>Limits:</strong> This is a deliberately incomplete PowerShell and LDAP implementation. No real AD server, no authentication, AD replication, ACLs, LDAP bind, network, or OS execution. Do not use it to validate production scripts.</p>
   </section>
 </main>
-<script src="COM_TERM.js"></script>
-<script src="PS_PARSER.js"></script>
-<script src="PS_AD.js"></script>
-<script src="PS_AD_COMMANDS.js"></script>
-<script src="PS_CORE.js"></script>
-<script src="PS_TERMINAL_ADAPTER.js"></script>
+<script src="res/COM_TERM.js"></script>
+<script src="res/PS_PARSER.js"></script>
+<script src="res/PS_AD.js"></script>
+<script src="res/PS_AD_COMMANDS.js"></script>
+<script src="res/PS_CORE.js"></script>
+<script src="res/PS_TERMINAL_ADAPTER.js"></script>
 <script>
 (function(){
  'use strict';
