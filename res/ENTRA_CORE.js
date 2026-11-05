@@ -130,6 +130,48 @@ function EntraDirectory(seed, options)
                 "accountEnabled": true,
                 "operatingSystem": "Windows"
             }
+        ],
+        "accessPackageCatalogs": [
+            {
+                "id": "f0000000-0000-4000-8000-000000001001",
+                "displayName": "General",
+                "description": "Built-in entitlement management catalog",
+                "catalogType": "serviceDefault",
+                "state": "published",
+                "isExternallyVisible": false,
+                "createdDateTime": "2026-10-01T00:00:00.000Z",
+                "modifiedDateTime": "2026-10-01T00:00:00.000Z"
+            },
+            {
+                "id": "f0000000-0000-4000-8000-000000001002",
+                "displayName": "Engineering",
+                "description": "Engineering team access",
+                "catalogType": "userManaged",
+                "state": "published",
+                "isExternallyVisible": false,
+                "createdDateTime": "2026-10-01T00:00:00.000Z",
+                "modifiedDateTime": "2026-10-01T00:00:00.000Z"
+            }
+        ],
+        "accessPackages": [
+            {
+                "id": "f0000000-0000-4000-8000-000000001101",
+                "catalogId": "f0000000-0000-4000-8000-000000001002",
+                "displayName": "Engineering Starter",
+                "description": "Illustrative engineering onboarding package",
+                "isHidden": false,
+                "createdDateTime": "2026-10-01T00:00:00.000Z",
+                "modifiedDateTime": "2026-10-01T00:00:00.000Z"
+            },
+            {
+                "id": "f0000000-0000-4000-8000-000000001102",
+                "catalogId": "f0000000-0000-4000-8000-000000001001",
+                "displayName": "Employee Essentials",
+                "description": "Illustrative common employee access package",
+                "isHidden": false,
+                "createdDateTime": "2026-10-01T00:00:00.000Z",
+                "modifiedDateTime": "2026-10-01T00:00:00.000Z"
+            }
         ]
     };
 
@@ -181,6 +223,8 @@ function EntraDirectory(seed, options)
             var headers = (request || {}).headers || {};
             var parts = target.segments;
             if (!parts.length) return failure(404, 'Request_ResourceNotFound', 'Unknown Graph endpoint.');
+            if (parts[0] === 'identityGovernance')
+                return entitlementGraph(verb, parts, query, body, headers, target.path);
 
             var collection = parts[0];
             if (!isCollection(collection))
@@ -276,6 +320,21 @@ function EntraDirectory(seed, options)
             }
         }
         if (typeof db.tenantId !== 'string') bad('Directory seed missing tenantId.');
+        // Older custom tenant fixtures remain compatible with the new optional collections.
+        for (var extra of ['accessPackageCatalogs','accessPackages'])
+        {
+            if (db[extra] === undefined) db[extra] = [];
+            if (!Array.isArray(db[extra])) bad('Directory seed must contain an array: ' + extra);
+            for (var record of db[extra])
+            {
+                if (!record || typeof record.id !== 'string') bad('Invalid governance object ID.');
+            }
+        }
+        for (var item of db.accessPackages)
+        {
+            if (!db.accessPackageCatalogs.some(function(c) { return same(c.id, item.catalogId); }))
+                bad('Access package references an unknown catalog.');
+        }
     }
     function isCollection(name)
     {
@@ -368,7 +427,11 @@ function EntraDirectory(seed, options)
             servicePrincipals: ['id','appId','displayName','servicePrincipalType','accountEnabled'],
             directoryRoles: ['id','displayName','description'],
             devices: ['id','displayName','deviceId','accountEnabled','operatingSystem'],
-            organization: ['id','displayName','verifiedDomains']
+            organization: ['id','displayName','verifiedDomains'],
+            accessPackageCatalogs: ['id','displayName','description','catalogType','state',
+                                    'isExternallyVisible','createdDateTime','modifiedDateTime'],
+            accessPackages: ['id','displayName','description','catalogId','isHidden',
+                             'createdDateTime','modifiedDateTime']
         };
         if (collection === 'directoryObjects')
         {
@@ -685,7 +748,7 @@ function EntraDirectory(seed, options)
         {
             id = 'f0000000-0000-4000-8000-' + String(nextSequence++).padStart(12, '0');
         }
-        while (recordForId(id));
+        while (recordForId(id) || locate('accessPackageCatalogs', id) || locate('accessPackages', id));
         return id;
     }
     function allowedFields(collection)
@@ -784,6 +847,195 @@ function EntraDirectory(seed, options)
         }
         return success(204);
     }
+    // Entitlement management is a separate Graph surface, not an LDAP or group-membership alias.
+    // The simulation currently models catalog and package metadata only: no policies, resources,
+    // role scopes, assignments, licensing or actual entitlement grants.
+    function entitlementGraph(verb, parts, query, body, headers, path)
+    {
+        if (parts[1] !== 'entitlementManagement' || parts.length < 3)
+            return failure(404, 'Request_ResourceNotFound', 'Unsupported governance endpoint.');
+
+        var kind = parts[2];
+        var collection = kind === 'catalogs' ? 'accessPackageCatalogs' :
+            kind === 'accessPackages' ? 'accessPackages' : null;
+        if (!collection)
+            return failure(404, 'Request_ResourceNotFound', 'Unknown entitlement management collection.');
+
+        if (parts.length === 3)
+        {
+            if (verb === 'GET')
+            {
+                var listing = governanceList(collection, kind, query, headers, path);
+                return listing;
+            }
+            if (verb === 'POST')
+            {
+                checkQuery(query, []);
+                return createGovernance(collection, kind, body);
+            }
+            return failure(405, 'MethodNotAllowed', 'Unsupported catalog or package operation.');
+        }
+        if (parts.length !== 4 && parts.length !== 5)
+            return failure(404, 'Request_ResourceNotFound', 'Unsupported governance path.');
+        var item = locate(collection, parts[3]);
+        if (!item) return failure(404, 'Request_ResourceNotFound', 'Catalog or package not found.');
+        if (parts.length === 5)
+        {
+            if (verb !== 'GET') return failure(405, 'MethodNotAllowed', 'Relationship is read-only.');
+            if (collection === 'accessPackageCatalogs' && parts[4] === 'accessPackages')
+                return governanceList('accessPackages', 'accessPackages', query, headers, path, item.id);
+            if (collection === 'accessPackages' && parts[4] === 'catalog')
+            {
+                checkQuery(query, ['$select']);
+                return success(200, project('accessPackageCatalogs', locate('accessPackageCatalogs', item.catalogId), query.$select));
+            }
+            return failure(404, 'Request_ResourceNotFound', 'Unknown governance relationship.');
+        }
+        if (verb === 'GET')
+        {
+            var expand = governanceExpand(query, collection);
+            var result = getObject(collection, item, expand.query);
+            if (expand.relation) governanceDecorate(result.body, collection, expand.relation);
+            return result;
+        }
+        if (verb === 'PATCH')
+        {
+            checkQuery(query, []);
+            return updateGovernance(collection, item, body);
+        }
+        if (verb === 'DELETE')
+        {
+            checkQuery(query, []);
+            return deleteGovernance(collection, item);
+        }
+        return failure(405, 'MethodNotAllowed', 'Unsupported catalog or package operation.');
+    }
+    function governanceExpand(query, collection)
+    {
+        var copy = mergeQuery(query);
+        var relation = copy.$expand;
+        if (relation !== undefined)
+        {
+            if (relation !== (collection === 'accessPackages' ? 'catalog' : 'accessPackages'))
+                bad('Unsupported $expand relationship.', 'Request_UnsupportedQuery');
+            delete copy.$expand;
+        }
+        return { query: copy, relation: relation };
+    }
+    function governanceDecorate(item, collection, relation)
+    {
+        if (collection === 'accessPackages' && relation === 'catalog')
+            item.catalog = project('accessPackageCatalogs', locate('accessPackageCatalogs', item.catalogId), null);
+        if (collection === 'accessPackageCatalogs' && relation === 'accessPackages')
+        {
+            item.accessPackages = self.DB.accessPackages.filter(function(p) { return same(p.catalogId, item.id); })
+                .map(function(p) { return project('accessPackages', p, null); });
+        }
+    }
+    function governanceList(collection, kind, query, headers, path, catalogId)
+    {
+        var expand = governanceExpand(query, collection);
+        var records = self.DB[collection];
+        if (catalogId !== undefined)
+            records = records.filter(function(item) { return same(item.catalogId, catalogId); });
+        var result = listValues(collection, records, expand.query, headers, path);
+        result.body['@odata.context'] = 'https://graph.microsoft.com/v1.0/$metadata#identityGovernance/entitlementManagement/' + kind;
+        if (expand.relation)
+            result.body.value.forEach(function(item) { governanceDecorate(item, collection, expand.relation); });
+        return result;
+    }
+    function checkGovernanceBody(collection, data, create)
+    {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) bad('Request body must be an object.');
+        var allowed = collection === 'accessPackageCatalogs'
+            ? ['displayName','description','state','isExternallyVisible']
+            : (create ? ['displayName','description','isHidden','catalog','catalogId']
+                      : ['displayName','description','isHidden']);
+        for (var key of Object.keys(data))
+        {
+            if (!allowed.includes(key)) bad('Property is not writable: ' + key);
+        }
+        if (owns(data, 'displayName') && (typeof data.displayName !== 'string' || !data.displayName.trim()))
+            bad('displayName must be a nonempty string.');
+        if (create && !owns(data, 'displayName')) bad('displayName is required.');
+        if (owns(data, 'description') && typeof data.description !== 'string')
+            bad('description must be a string.');
+        if (collection === 'accessPackageCatalogs')
+        {
+            if (owns(data, 'state') && !['published','unpublished'].includes(data.state))
+                bad('state must be published or unpublished.');
+            if (owns(data, 'isExternallyVisible') && typeof data.isExternallyVisible !== 'boolean')
+                bad('isExternallyVisible must be Boolean.');
+        }
+        else
+        {
+            if (owns(data, 'isHidden') && typeof data.isHidden !== 'boolean')
+                bad('isHidden must be Boolean.');
+        }
+    }
+    function createGovernance(collection, kind, body)
+    {
+        checkGovernanceBody(collection, body, true);
+        var data = clone(body);
+        var now = new Date().toISOString();
+        if (collection === 'accessPackageCatalogs')
+        {
+            data.catalogType = 'userManaged';
+            data.state = data.state || 'published';
+            if (!owns(data, 'isExternallyVisible')) data.isExternallyVisible = false;
+        }
+        else
+        {
+            var nested = data.catalog;
+            if (nested !== undefined && (!nested || typeof nested !== 'object' || Array.isArray(nested) ||
+                typeof nested.id !== 'string' || Object.keys(nested).some(function(k) { return k !== 'id'; })))
+                bad('catalog must contain only the id property.');
+            var ref = nested === undefined ? data.catalogId : nested.id;
+            if (typeof ref !== 'string' || !ref.trim()) bad('catalog.id is required.');
+            if (data.catalogId !== undefined && nested && !same(data.catalogId, nested.id))
+                bad('catalog and catalogId disagree.');
+            var catalog = locate('accessPackageCatalogs', ref);
+            if (!catalog) return failure(404, 'Request_ResourceNotFound', 'Referenced catalog not found.');
+            if (catalog.state !== 'published')
+                return failure(409, 'Request_ResourceConflict', 'The catalog must be published.');
+            data.catalogId = catalog.id;
+            delete data.catalog;
+            if (!owns(data, 'isHidden')) data.isHidden = false;
+        }
+        data.id = generateId();
+        data.createdDateTime = now;
+        data.modifiedDateTime = now;
+        self.DB[collection].push(data);
+        return success(201, project(collection, data, null), {
+            Location: 'https://graph.microsoft.com/v1.0/identityGovernance/entitlementManagement/' + kind + '/' + data.id
+        });
+    }
+    function updateGovernance(collection, item, body)
+    {
+        checkGovernanceBody(collection, body, false);
+        if (collection === 'accessPackageCatalogs' && item.catalogType === 'serviceDefault')
+            return failure(403, 'Authorization_RequestDenied', 'The built-in catalog cannot be edited in this simulation.');
+        if (Object.keys(body).length)
+        {
+            for (var key of Object.keys(body)) item[key] = clone(body[key]);
+            item.modifiedDateTime = new Date().toISOString();
+        }
+        return success(204);
+    }
+    function deleteGovernance(collection, item)
+    {
+        if (collection === 'accessPackageCatalogs')
+        {
+            if (item.catalogType !== 'userManaged')
+                return failure(403, 'Authorization_RequestDenied', 'A built-in catalog cannot be deleted.');
+            if (self.DB.accessPackages.some(function(p) { return same(p.catalogId, item.id); }))
+                return failure(409, 'Request_ResourceConflict', 'Delete access packages before deleting their catalog.');
+        }
+        var items = self.DB[collection];
+        items.splice(items.indexOf(item), 1);
+        return success(204);
+    }
+
     function addGroupMember(group, body)
     {
         if (!body || typeof body['@odata.id'] !== 'string') bad('Supply @odata.id in the body.');

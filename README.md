@@ -5,7 +5,7 @@ A **static, browser-only** PowerShell *subset* simulator with a separate parser,
 ## Quick start
 
 1. Open **`index.html`** in Chrome/Edge/Firefox/Safari. The standalone LDAP console remains available at `tools/ActiveDirectory-demo.html`.
-2. Use the example buttons (AD users, LDAP filter, Group membership, Modify AD, If / foreach, Virtual files, Entra ID / Graph). Expand **More Entra ID / Graph scripts** for 14 additional read-only and write-oriented Graph scenarios.
+2. Use the example buttons (AD users, LDAP filter, Group membership, Modify AD, If / foreach, Virtual files, Entra ID / Graph). Expand **More Entra ID / Graph scripts** for 14 additional scenarios and **Entra ID Governance: access catalogs & packages (9)** for nine Entitlement Management Graph CRUD examples.
 3. Click **Run script** or press Ctrl/Cmd+Enter. You can also type single commands into `COM_TERM`.
 4. Click **Inspect AST** to see the parsed control-flow structure before execution.
 5. **Reset sandbox** reinitializes variables, virtual files, on-premises directory objects, cloud tenant objects, simulated Graph connection and LDAP query log. Terminal command history in `localStorage` is separate.
@@ -54,6 +54,8 @@ Each page creates its **own in-memory instance**: the PowerShell simulator retai
 
 **Cloud integration:** `index.html` now also loads `ENTRA_CORE.js` and `PS_GRAPH_COMMANDS.js`. The PowerShell simulator has an independent fictional `northwind.example` tenant with users, groups and applications. `Connect-MgGraph` simulates a connection (no login or scope enforcement), `Get-MgUser`/`Get-MgGroup` query it, and `Invoke-MgGraphRequest` exposes raw Graph-style operations. [Graph PowerShell command guide](docs/PS_GRAPH_COMMANDS.md) and [Graph core API](docs/README-ENTRA_CORE.md).
 
+**Entitlement Management:** `ENTRA_CORE.js` now models access package catalogs and access packages with Graph GET/POST/PATCH/DELETE operations. Both catalogs and packages include a fictional read-only fixture, and their relationship is maintained. Nine sample scripts in `index.html` exercise CRUD through `Invoke-MgGraphRequest`. This version models metadata only; it does **not** implement resource role assignments, policies, access requests or actual access grants. See [Entitlement Management API and examples](docs/ENTITLEMENT_MANAGEMENT.md).
+
 ## Core v0.2 functionality
 
 **Parser/runtime improvements:** explicit statement AST, nested `if (expression) { ... } else { ... }`, `foreach ($name in $array) { ... }`, simple `function Name($arg) { ... }`, quote/brace-safe multi-statement parsing, line continuations in pipelines, block comments, better parse errors and command-output assignment (`$users = Get-ADUser ...`). Supports session variables, property access, arithmetic/comparisons, quoted strings and simple PowerShell object pipelines. Input/output and session remain independent from the browser UI.
@@ -67,6 +69,8 @@ Each page creates its **own in-memory instance**: the PowerShell simulator retai
 **PowerShell pipeline vs. LDAP query:** These are different layers. The `-LDAPFilter` string is evaluated *inside* the virtual directory; `|` passes **objects** from one PowerShell cmdlet to another. `Search-LDAP` is simulated **in memory**; it does not perform any LDAP network bind. A future real-AD connector would require a separately designed authenticated service/proxy, not direct browser LDAP socket access.
 
 The built-in Graph example library includes tenant inventory, user filtering, paging, nested group membership, directory roles, application inventory, direct Graph REST calls and simulated mutations. See [Graph script library](docs/GRAPH_SCRIPT_LIBRARY.md).
+
+**Governance examples:** open the new expandable section in `index.html` for nine read-only and CRUD scripts covering access catalogs and packages. Example `.ps1` files are also under `examples/graph/entitlement/`. All operations remain local to the fictional `northwind.example` tenant; Reset sandbox reverts changes.
 
 ## Example scripts
 
@@ -117,6 +121,7 @@ Get-LDAPQueryLog
 - `node res/PS_GRAPH_TESTS.js`: cloud PowerShell cmdlet and integration tests.
 - `node res/PS_GRAPH_SAMPLES.test.js`: all 14 selectable Microsoft Graph example scripts and the UI button wiring.
 - `node res/ENTRA_CORE.test.js`: standalone Graph core tests.
+- `node res/ENTITLEMENT_TESTS.js`: governance core CRUD tests, relationship integrity, 9 runnable scripts, and HTML button/Run verification.
 
 - `node res/PS_TESTS.js`: 50 regression tests covering parser, control flow, virtual filesystem, AD queries, LDAP filters, bitwise and transitive matching, group mutations, reset and error handling.
 - `node res/PS_TESTS_v01.js`: original 18 v0.1 compatibility tests.

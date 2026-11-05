@@ -67,6 +67,24 @@
           <button type="button" data-example="graphAppRegistration" title="Register application">Register application</button>
         </nav>
       </details>
+      <details class="graph-library" id="governance-library">
+        <summary>Entra ID Governance: access catalogs &amp; packages (9)</summary>
+        <div class="graph-library-label">Read-only Graph API examples</div>
+        <nav class="sample-bar" aria-label="Entitlement management read examples">
+          <button type="button" data-example="govCatalogRead">List catalogs</button>
+          <button type="button" data-example="govPackageRead">List access packages</button>
+        </nav>
+        <div class="graph-library-label">Changes fictional tenant data — Reset sandbox restores it</div>
+        <nav class="sample-bar" aria-label="Entitlement management CRUD examples">
+          <button type="button" data-example="govCatalogCreate">Create catalog</button>
+          <button type="button" data-example="govCatalogUpdate">Update catalog</button>
+          <button type="button" data-example="govCatalogDelete">Delete temporary catalog</button>
+          <button type="button" data-example="govPackageCreate">Create access package</button>
+          <button type="button" data-example="govPackageUpdate">Update access package</button>
+          <button type="button" data-example="govPackageDelete">Delete temporary package</button>
+          <button type="button" data-example="govLifecycle">Full package lifecycle</button>
+        </nav>
+      </details>
       <label class="sr-only" for="script">PowerShell script source</label>
       <textarea id="script" class="editor" spellcheck="false" autocomplete="off"># Search a simulated Active Directory
 Get-ADUser -Filter { Enabled -eq $true } -Properties Department |
@@ -80,6 +98,7 @@ Get-ADUser -Filter { Enabled -eq $true } -Properties Department |
     <p><strong>Two different pipelines:</strong> <code>-LDAPFilter</code> and <code>Search-LDAP</code> evaluate LDAP expressions in the simulated directory; the PowerShell <code>|</code> operator passes JavaScript objects between cmdlets. Neither opens a real LDAP connection.</p>
     <p><strong>Simulated changes:</strong> <code>Set-ADUser</code>, <code>Enable-ADAccount</code>, <code>Disable-ADAccount</code> and group membership commands modify in-memory data only. Click <strong>Reset sandbox</strong> to restore examples.</p>
     <p><strong>Entra ID / Graph:</strong> Connect with <code>Connect-MgGraph</code> and query fictional cloud users via <code>Get-MgUser</code>. The Graph connection is simulated; scopes and permissions are not enforced and no Microsoft network requests are made.</p>
+    <p><strong>Entitlement management:</strong> Access package catalogs contain access packages. Test simulated Graph CRUD requests using <code>Invoke-MgGraphRequest</code>; package assignments, policies, resources and access grants are not implemented.</p>
     <p><strong>Limits:</strong> This is a deliberately incomplete PowerShell and LDAP implementation. No real AD server, no authentication, AD replication, ACLs, LDAP bind, network, or OS execution. Do not use it to validate production scripts.</p>
   </section>
 </main>
@@ -206,6 +225,72 @@ Get-ADUser -Filter { Enabled -eq $true } -Properties Department |
     "New-MgApplication -DisplayName \"Inventory Demo API\" -SignInAudience AzureADMyOrg",
     "Get-MgApplication -Filter \"displayName eq 'Inventory Demo API'\"",
     "Get-MgServicePrincipal -All | Select-Object displayName,appId"
+  ].join("\n")
+ });
+ Object.assign(samples, {
+  govCatalogRead: [
+    "# List catalogs and inspect a specific catalog",
+    "Connect-MgGraph -Scopes \"EntitlementManagement.Read.All\"",
+    "Invoke-MgGraphRequest -Method GET -Uri '/v1.0/identityGovernance/entitlementManagement/catalogs?$select=id,displayName,state,catalogType'",
+    "Invoke-MgGraphRequest -Method GET -Uri '/v1.0/identityGovernance/entitlementManagement/catalogs/f0000000-0000-4000-8000-000000001002?$expand=accessPackages'",
+  ].join("\n"),
+  govPackageRead: [
+    "# Find the access packages in a catalog and expand their parent catalogs",
+    "Connect-MgGraph -Scopes \"EntitlementManagement.Read.All\"",
+    "Invoke-MgGraphRequest -Method GET -Uri '/v1.0/identityGovernance/entitlementManagement/accessPackages?%24filter=catalogId%20eq%20%27f0000000-0000-4000-8000-000000001002%27'",
+    "Invoke-MgGraphRequest -Method GET -Uri '/v1.0/identityGovernance/entitlementManagement/accessPackages/f0000000-0000-4000-8000-000000001101?$expand=catalog'",
+  ].join("\n"),
+  govCatalogCreate: [
+    "# POST a fictional user-managed catalog; save the new ID",
+    "Connect-MgGraph -Scopes \"EntitlementManagement.ReadWrite.All\"",
+    "$catalog = Invoke-MgGraphRequest -Method POST -Uri '/v1.0/identityGovernance/entitlementManagement/catalogs' -Body '{\"displayName\":\"HR Lifecycle\",\"description\":\"Fictional HR entitlements\",\"state\":\"published\",\"isExternallyVisible\":false}'",
+    "$catalog",
+    "Invoke-MgGraphRequest -Method GET -Uri \"/v1.0/identityGovernance/entitlementManagement/catalogs/$catalog.id\"",
+  ].join("\n"),
+  govCatalogUpdate: [
+    "# PATCH the fictional Engineering catalog (Reset sandbox restores it)",
+    "Connect-MgGraph -Scopes \"EntitlementManagement.ReadWrite.All\"",
+    "Invoke-MgGraphRequest -Method PATCH -Uri '/v1.0/identityGovernance/entitlementManagement/catalogs/f0000000-0000-4000-8000-000000001002' -Body '{\"description\":\"Engineering access curated by IGA\",\"isExternallyVisible\":true}'",
+    "Invoke-MgGraphRequest -Method GET -Uri '/v1.0/identityGovernance/entitlementManagement/catalogs/f0000000-0000-4000-8000-000000001002'",
+  ].join("\n"),
+  govCatalogDelete: [
+    "# Create a temporary catalog, then DELETE the returned ID",
+    "Connect-MgGraph -Scopes \"EntitlementManagement.ReadWrite.All\"",
+    "$catalog = Invoke-MgGraphRequest -Method POST -Uri '/v1.0/identityGovernance/entitlementManagement/catalogs' -Body '{\"displayName\":\"Temporary Catalog\",\"description\":\"Delete-me demo\"}'",
+    "$catalog",
+    "Invoke-MgGraphRequest -Method DELETE -Uri \"/v1.0/identityGovernance/entitlementManagement/catalogs/$catalog.id\"",
+    "Invoke-MgGraphRequest -Method GET -Uri '/v1.0/identityGovernance/entitlementManagement/catalogs?$select=id,displayName'",
+  ].join("\n"),
+  govPackageCreate: [
+    "# POST a package linked to the built-in General catalog",
+    "Connect-MgGraph -Scopes \"EntitlementManagement.ReadWrite.All\"",
+    "$package = Invoke-MgGraphRequest -Method POST -Uri '/v1.0/identityGovernance/entitlementManagement/accessPackages' -Body '{\"displayName\":\"HR Basic Access\",\"description\":\"Demo access bundle\",\"isHidden\":false,\"catalog\":{\"id\":\"f0000000-0000-4000-8000-000000001001\"}}'",
+    "$package",
+    "Invoke-MgGraphRequest -Method GET -Uri \"/v1.0/identityGovernance/entitlementManagement/accessPackages/$package.id?%24expand=catalog\"",
+  ].join("\n"),
+  govPackageUpdate: [
+    "# PATCH an existing package; catalog linkage is immutable",
+    "Connect-MgGraph -Scopes \"EntitlementManagement.ReadWrite.All\"",
+    "Invoke-MgGraphRequest -Method PATCH -Uri '/v1.0/identityGovernance/entitlementManagement/accessPackages/f0000000-0000-4000-8000-000000001101' -Body '{\"description\":\"Revised engineering starter access\",\"isHidden\":true}'",
+    "Invoke-MgGraphRequest -Method GET -Uri '/v1.0/identityGovernance/entitlementManagement/accessPackages/f0000000-0000-4000-8000-000000001101?$select=id,displayName,isHidden,description'",
+  ].join("\n"),
+  govPackageDelete: [
+    "# Create then remove a transient package using its returned ID",
+    "Connect-MgGraph -Scopes \"EntitlementManagement.ReadWrite.All\"",
+    "$package = Invoke-MgGraphRequest -Method POST -Uri '/v1.0/identityGovernance/entitlementManagement/accessPackages' -Body '{\"displayName\":\"Temporary Package\",\"catalog\":{\"id\":\"f0000000-0000-4000-8000-000000001002\"}}'",
+    "$package",
+    "Invoke-MgGraphRequest -Method DELETE -Uri \"/v1.0/identityGovernance/entitlementManagement/accessPackages/$package.id\"",
+    "Invoke-MgGraphRequest -Method GET -Uri '/v1.0/identityGovernance/entitlementManagement/accessPackages?%24filter=catalogId%20eq%20%27f0000000-0000-4000-8000-000000001002%27'",
+  ].join("\n"),
+  govLifecycle: [
+    "# Full package lifecycle: POST -> GET -> PATCH -> GET -> DELETE",
+    "Connect-MgGraph -Scopes \"EntitlementManagement.ReadWrite.All\"",
+    "$package = Invoke-MgGraphRequest -Method POST -Uri '/v1.0/identityGovernance/entitlementManagement/accessPackages' -Body '{\"displayName\":\"Lifecycle Example\",\"catalog\":{\"id\":\"f0000000-0000-4000-8000-000000001002\"}}'",
+    "Invoke-MgGraphRequest -Method GET -Uri \"/v1.0/identityGovernance/entitlementManagement/accessPackages/$package.id\"",
+    "Invoke-MgGraphRequest -Method PATCH -Uri \"/v1.0/identityGovernance/entitlementManagement/accessPackages/$package.id\" -Body '{\"description\":\"Reviewed by the IGA team\",\"isHidden\":true}'",
+    "Invoke-MgGraphRequest -Method GET -Uri \"/v1.0/identityGovernance/entitlementManagement/accessPackages/$package.id\"",
+    "Invoke-MgGraphRequest -Method DELETE -Uri \"/v1.0/identityGovernance/entitlementManagement/accessPackages/$package.id\"",
+    "Invoke-MgGraphRequest -Method GET -Uri '/v1.0/identityGovernance/entitlementManagement/accessPackages?%24filter=displayName%20eq%20%27Lifecycle%20Example%27'",
   ].join("\n")
  });
  function refreshStats(){entryCount.textContent=adapter.engine.session.directory.all().length+' objects';}
