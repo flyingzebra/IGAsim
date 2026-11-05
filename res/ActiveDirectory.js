@@ -1,218 +1,9 @@
-/* ActiveDirectoryJS v0.1.1 - standalone, in-memory LDAP/Active Directory emulator.
- * Load with <script src="ActiveDirectory.js"></script> or require() in Node.
- * No network service, real LDAP BER framing, ACLs, or cryptographic authentication.
+/* ActiveDirectoryJS v0.1.2 — plain browser constructor, no module wrapper.
+ * All directory data is inline inside this.DB. Load with a classic script tag.
+ * Standalone LDAP API simulation only; not an LDAP network server or secure authentication.
  */
-(function (root, factory) {
-  var ActiveDirectory = factory();
-  if (typeof module === 'object' && module.exports) module.exports = ActiveDirectory;
-  if (root) root.ActiveDirectory = ActiveDirectory;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
-  'use strict';
 
-  var CODES = Object.freeze({
-    success: 0, operationsError: 1, protocolError: 2, sizeLimitExceeded: 4,
-    compareFalse: 5,
-    compareTrue: 6, authMethodNotSupported: 7, strongAuthRequired: 8,
-    noSuchAttribute: 16, attributeOrValueExists: 20, invalidAttributeSyntax: 21,
-    invalidCredentials: 49, insufficientAccessRights: 50,
-    noSuchObject: 32, invalidDNSyntax: 34,
-    entryAlreadyExists: 68, notAllowedOnNonLeaf: 66,
-    unwillingToPerform: 53, other: 80
-  });
-  var NAMES = Object.fromEntries(Object.entries(CODES).map(function (pair) { return [pair[1], pair[0]]; }));
-  var encoder = new TextEncoder();
-  var decoder = new TextDecoder('utf-8');
-
-  function clone(x) { return JSON.parse(JSON.stringify(x)); }
-  function list(x) { return x == null ? [] : Array.isArray(x) ? x.slice() : [x]; }
-  function eq(a, b) { return String(a).toLowerCase() === String(b).toLowerCase(); }
-  function normalizeDN(dn) {
-    if (typeof dn !== 'string') return null;
-    if (dn === '') return ''; // LDAP RootDSE
-    var pieces = dn.split(/(?<!\\),/);
-    if (!pieces.length || pieces.some(function (p) { return !/^\s*[^=,]+\s*=\s*[^,]+\s*$/.test(p); })) return null;
-    return pieces.map(function (rdn) {
-      var pos = rdn.indexOf('=');
-      if (pos < 1) return null;
-      return rdn.slice(0, pos).trim().toLowerCase() + '=' +
-        rdn.slice(pos + 1).trim().toLowerCase();
-    }).join(',');
-  }
-  function parentDN(dn) { var i = dn.indexOf(','); return i < 0 ? '' : dn.slice(i + 1); }
-  function isUnder(dn, base, scope) {
-    if (scope === 'base') return dn === base;
-    if (scope === 'one') return parentDN(dn) === base;
-    return dn === base || (base === '' ? true : dn.endsWith(',' + base));
-  }
-  function result(code, fields, message) {
-    return Object.assign({ resultCode: code, code: NAMES[code] || 'other',
-      success: code === 0 || code === 5 || code === 6,
-      message: message || '' }, fields || {});
-  }
-  function getKey(obj, attr) { return Object.keys(obj).find(function (key) { return eq(key, attr); }); }
-  function getRaw(entry, attr) {
-    var key = getKey(entry.attributes, attr);
-    return key ? list(entry.attributes[key]) : [];
-  }
-  function setRaw(entry, attr, values) {
-    var key = getKey(entry.attributes, attr) || attr;
-    entry.attributes[key] = list(values);
-  }
-  function printableAttrs(entry, entries) {
-    var a = clone(entry.attributes);
-    delete a._password;
-    a.distinguishedName = [entry.dn];
-    if (getRaw(entry, 'memberOf').length === 0) {
-      var groups = entries.filter(function (g) {
-        return getRaw(g, 'member').some(function (m) { return normalizeDN(m) === normalizeDN(entry.dn); });
-      });
-      if (groups.length) a.memberOf = groups.map(function (g) { return g.dn; });
-    }
-    return a;
-  }
-  function attrsOf(entry, entries, requested) {
-    var all = printableAttrs(entry, entries);
-    var names = requested == null ? ['*'] : list(requested);
-    if (names.indexOf('1.1') >= 0 && names.length === 1) return {};
-    if (names.indexOf('*') >= 0) return all;
-    var selected = {};
-    names.forEach(function (name) {
-      var key = getKey(all, name);
-      if (key) selected[key] = clone(all[key]);
-    });
-    return selected;
-  }
-
-  // RFC 4515 escapes: backslash + 2 hex digits encodes one UTF-8 byte.
-  // Literal * is handled as a wildcard, while \2a matches an actual asterisk.
-  function decodedValue(raw) {
-    var bytes = [];
-    for (var i = 0; i < raw.length;) {
-      if (raw[i] === '\\') {
-        if (!/^[0-9a-fA-F]{2}$/.test(raw.slice(i + 1, i + 3)))
-          throw new Error('Malformed filter escape at position ' + i);
-        bytes.push(parseInt(raw.slice(i + 1, i + 3), 16)); i += 3;
-      } else {
-        var cp = raw.codePointAt(i);
-        var sequence = encoder.encode(String.fromCodePoint(cp));
-        sequence.forEach(function (b) { bytes.push(b); });
-        i += cp > 65535 ? 2 : 1;
-      }
-    }
-    return decoder.decode(Uint8Array.from(bytes));
-  }
-  function wildcardParts(raw) {
-    var parts = [], start = 0;
-    for (var i = 0; i < raw.length; i++) {
-      if (raw[i] === '\\') { i += 2; continue; }
-      if (raw[i] === '*') { parts.push(decodedValue(raw.slice(start, i))); start = i + 1; }
-    }
-    parts.push(decodedValue(raw.slice(start)));
-    return parts;
-  }
-  function escapeRE(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-  function filterParser(input) {
-    if (typeof input !== 'string') throw new Error('Filter must be a string');
-    var pos = 0;
-    function parse() {
-      if (input[pos++] !== '(') throw new Error('Expected "(" at ' + (pos - 1));
-      var kind = input[pos];
-      if (kind === '&' || kind === '|') {
-        pos++;
-        var children = [];
-        while (input[pos] === '(') children.push(parse());
-        if (!children.length) throw new Error('Boolean filter requires a child');
-        if (input[pos++] !== ')') throw new Error('Unclosed boolean filter');
-        return { kind: kind, children: children };
-      }
-      if (kind === '!') {
-        pos++; var child = parse();
-        if (input[pos++] !== ')') throw new Error('Unclosed NOT filter');
-        return { kind: '!', child: child };
-      }
-      var start = pos;
-      while (pos < input.length) {
-        if (input[pos] === '\\') {
-          if (!/^[0-9a-fA-F]{2}$/.test(input.slice(pos + 1, pos + 3)))
-            throw new Error('Malformed filter escape at ' + pos);
-          pos += 3; continue;
-        }
-        if (input[pos] === ')') break;
-        if (input[pos] === '(') throw new Error('Unescaped "(" in filter');
-        pos++;
-      }
-      if (input[pos++] !== ')') throw new Error('Unclosed attribute filter');
-      var item = input.slice(start, pos - 1);
-      var m = /^([^=<>~]+?)(:=|~=|>=|<=|=)(.*)$/.exec(item);
-      if (!m) throw new Error('Invalid attribute filter: ' + item);
-      var attr = m[1], op = m[2], raw = m[3];
-      var segments = attr.split(':');
-      if (segments.length > 1 && op !== ':=') throw new Error('Invalid extensible match');
-      if (op === ':=' && !/^\d+(\.\d+)+$/.test(segments[segments.length - 1]))
-        throw new Error('Unsupported matching rule: ' + attr);
-      if (!segments[0] || !/^[a-zA-Z][a-zA-Z0-9-]*$/.test(segments[0]))
-        throw new Error('Invalid attribute name: ' + attr);
-      return { kind: 'item', attr: segments[0], rule: op === ':=' ? segments[segments.length - 1] : null,
-        op: op, raw: raw, value: decodedValue(raw), parts: op === '=' ? wildcardParts(raw) : null };
-    }
-    var ast = parse();
-    if (pos !== input.length) throw new Error('Trailing filter input at ' + pos);
-    return ast;
-  }
-  function walkRecursiveDN(startDN, attr, targetDN, entries, visited) {
-    var key = normalizeDN(startDN);
-    if (!key || visited.has(key)) return false;
-    visited.add(key);
-    var entry = entries.find(function (e) { return normalizeDN(e.dn) === key; });
-    if (!entry) return false;
-    var linked = attr === 'memberOf'
-      ? printableAttrs(entry, entries).memberOf || []
-      : getRaw(entry, 'member');
-    return linked.some(function (dn) {
-      return normalizeDN(dn) === normalizeDN(targetDN) ||
-        walkRecursiveDN(dn, attr, targetDN, entries, visited);
-    });
-  }
-  function matches(entry, ast, entries) {
-    if (ast.kind === '&') return ast.children.every(function (x) { return matches(entry, x, entries); });
-    if (ast.kind === '|') return ast.children.some(function (x) { return matches(entry, x, entries); });
-    if (ast.kind === '!') return !matches(entry, ast.child, entries);
-    var values = getRaw({ attributes: printableAttrs(entry, entries) }, ast.attr);
-    if (ast.op === ':=') {
-      if (ast.rule === '1.2.840.113556.1.4.1941') {
-        if (ast.attr.toLowerCase() !== 'memberof' && ast.attr.toLowerCase() !== 'member')
-          throw new Error('Transitive matching is supported for member/memberOf only');
-        return walkRecursiveDN(entry.dn, ast.attr.toLowerCase() === 'memberof' ? 'memberOf' : 'member', ast.value, entries, new Set());
-      }
-      if (ast.rule === '1.2.840.113556.1.4.803') {
-        var mask = Number(ast.value);
-        if (!Number.isSafeInteger(mask) || mask < 0) return false;
-        return values.some(function (v) { return (Number(v) & mask) === mask; });
-      }
-      if (ast.rule === '1.2.840.113556.1.4.804') {
-        var bits = Number(ast.value);
-        if (!Number.isSafeInteger(bits) || bits < 0) return false;
-        return values.some(function (v) { return (Number(v) & bits) !== 0; });
-      }
-      throw new Error('Unsupported matching rule: ' + ast.rule);
-    }
-    if (ast.op === '=' && ast.raw === '*') return values.length > 0;
-    if (ast.op === '=' && ast.parts.length > 1) {
-      var re = new RegExp('^' + ast.parts.map(escapeRE).join('.*') + '$', 'iu');
-      return values.some(function (v) { return re.test(String(v)); });
-    }
-    return values.some(function (v) {
-      if (ast.op === '=' || ast.op === '~=') return eq(v, ast.value);
-      var a = String(v), b = ast.value;
-      if (!Number.isNaN(Number(a)) && !Number.isNaN(Number(b)) && a !== '' && b !== '') {
-        return ast.op === '>=' ? Number(a) >= Number(b) : Number(a) <= Number(b);
-      }
-      var c = a.toLowerCase().localeCompare(b.toLowerCase());
-      return ast.op === '>=' ? c >= 0 : c <= 0;
-    });
-  }
-
-  function ActiveDirectory(seed, options) {
+function ActiveDirectory(seed, options) {
     if (!(this instanceof ActiveDirectory)) return new ActiveDirectory(seed, options);
 
     // Canonical default directory data: edit it HERE, not in an external .json file.
@@ -655,10 +446,215 @@
       return result(CODES.protocolError, null, err.message);
     }
     };
+
+  // Private LDAP helpers remain local to this ActiveDirectory instance.
+  var CODES = ActiveDirectory.RESULT_CODES;
+  var NAMES = Object.fromEntries(Object.entries(CODES).map(function (pair) { return [pair[1], pair[0]]; }));
+  var encoder = new TextEncoder();
+  var decoder = new TextDecoder('utf-8');
+
+  function clone(x) { return JSON.parse(JSON.stringify(x)); }
+  function list(x) { return x == null ? [] : Array.isArray(x) ? x.slice() : [x]; }
+  function eq(a, b) { return String(a).toLowerCase() === String(b).toLowerCase(); }
+  function normalizeDN(dn) {
+    if (typeof dn !== 'string') return null;
+    if (dn === '') return ''; // LDAP RootDSE
+    var pieces = dn.split(/(?<!\\),/);
+    if (!pieces.length || pieces.some(function (p) { return !/^\s*[^=,]+\s*=\s*[^,]+\s*$/.test(p); })) return null;
+    return pieces.map(function (rdn) {
+      var pos = rdn.indexOf('=');
+      if (pos < 1) return null;
+      return rdn.slice(0, pos).trim().toLowerCase() + '=' +
+        rdn.slice(pos + 1).trim().toLowerCase();
+    }).join(',');
+  }
+  function parentDN(dn) { var i = dn.indexOf(','); return i < 0 ? '' : dn.slice(i + 1); }
+  function isUnder(dn, base, scope) {
+    if (scope === 'base') return dn === base;
+    if (scope === 'one') return parentDN(dn) === base;
+    return dn === base || (base === '' ? true : dn.endsWith(',' + base));
+  }
+  function result(code, fields, message) {
+    return Object.assign({ resultCode: code, code: NAMES[code] || 'other',
+      success: code === 0 || code === 5 || code === 6,
+      message: message || '' }, fields || {});
+  }
+  function getKey(obj, attr) { return Object.keys(obj).find(function (key) { return eq(key, attr); }); }
+  function getRaw(entry, attr) {
+    var key = getKey(entry.attributes, attr);
+    return key ? list(entry.attributes[key]) : [];
+  }
+  function setRaw(entry, attr, values) {
+    var key = getKey(entry.attributes, attr) || attr;
+    entry.attributes[key] = list(values);
+  }
+  function printableAttrs(entry, entries) {
+    var a = clone(entry.attributes);
+    delete a._password;
+    a.distinguishedName = [entry.dn];
+    if (getRaw(entry, 'memberOf').length === 0) {
+      var groups = entries.filter(function (g) {
+        return getRaw(g, 'member').some(function (m) { return normalizeDN(m) === normalizeDN(entry.dn); });
+      });
+      if (groups.length) a.memberOf = groups.map(function (g) { return g.dn; });
+    }
+    return a;
+  }
+  function attrsOf(entry, entries, requested) {
+    var all = printableAttrs(entry, entries);
+    var names = requested == null ? ['*'] : list(requested);
+    if (names.indexOf('1.1') >= 0 && names.length === 1) return {};
+    if (names.indexOf('*') >= 0) return all;
+    var selected = {};
+    names.forEach(function (name) {
+      var key = getKey(all, name);
+      if (key) selected[key] = clone(all[key]);
+    });
+    return selected;
   }
 
-  // Backwards-compatible utility: returns an independent snapshot of the inline seed.
-  ActiveDirectory.sampleDB = function () { return new ActiveDirectory().DB; };
-  ActiveDirectory.RESULT_CODES = CODES;
-  return ActiveDirectory;
-});
+  // RFC 4515 escapes: backslash + 2 hex digits encodes one UTF-8 byte.
+  // Literal * is handled as a wildcard, while \2a matches an actual asterisk.
+  function decodedValue(raw) {
+    var bytes = [];
+    for (var i = 0; i < raw.length;) {
+      if (raw[i] === '\\') {
+        if (!/^[0-9a-fA-F]{2}$/.test(raw.slice(i + 1, i + 3)))
+          throw new Error('Malformed filter escape at position ' + i);
+        bytes.push(parseInt(raw.slice(i + 1, i + 3), 16)); i += 3;
+      } else {
+        var cp = raw.codePointAt(i);
+        var sequence = encoder.encode(String.fromCodePoint(cp));
+        sequence.forEach(function (b) { bytes.push(b); });
+        i += cp > 65535 ? 2 : 1;
+      }
+    }
+    return decoder.decode(Uint8Array.from(bytes));
+  }
+  function wildcardParts(raw) {
+    var parts = [], start = 0;
+    for (var i = 0; i < raw.length; i++) {
+      if (raw[i] === '\\') { i += 2; continue; }
+      if (raw[i] === '*') { parts.push(decodedValue(raw.slice(start, i))); start = i + 1; }
+    }
+    parts.push(decodedValue(raw.slice(start)));
+    return parts;
+  }
+  function escapeRE(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  function filterParser(input) {
+    if (typeof input !== 'string') throw new Error('Filter must be a string');
+    var pos = 0;
+    function parse() {
+      if (input[pos++] !== '(') throw new Error('Expected "(" at ' + (pos - 1));
+      var kind = input[pos];
+      if (kind === '&' || kind === '|') {
+        pos++;
+        var children = [];
+        while (input[pos] === '(') children.push(parse());
+        if (!children.length) throw new Error('Boolean filter requires a child');
+        if (input[pos++] !== ')') throw new Error('Unclosed boolean filter');
+        return { kind: kind, children: children };
+      }
+      if (kind === '!') {
+        pos++; var child = parse();
+        if (input[pos++] !== ')') throw new Error('Unclosed NOT filter');
+        return { kind: '!', child: child };
+      }
+      var start = pos;
+      while (pos < input.length) {
+        if (input[pos] === '\\') {
+          if (!/^[0-9a-fA-F]{2}$/.test(input.slice(pos + 1, pos + 3)))
+            throw new Error('Malformed filter escape at ' + pos);
+          pos += 3; continue;
+        }
+        if (input[pos] === ')') break;
+        if (input[pos] === '(') throw new Error('Unescaped "(" in filter');
+        pos++;
+      }
+      if (input[pos++] !== ')') throw new Error('Unclosed attribute filter');
+      var item = input.slice(start, pos - 1);
+      var m = /^([^=<>~]+?)(:=|~=|>=|<=|=)(.*)$/.exec(item);
+      if (!m) throw new Error('Invalid attribute filter: ' + item);
+      var attr = m[1], op = m[2], raw = m[3];
+      var segments = attr.split(':');
+      if (segments.length > 1 && op !== ':=') throw new Error('Invalid extensible match');
+      if (op === ':=' && !/^\d+(\.\d+)+$/.test(segments[segments.length - 1]))
+        throw new Error('Unsupported matching rule: ' + attr);
+      if (!segments[0] || !/^[a-zA-Z][a-zA-Z0-9-]*$/.test(segments[0]))
+        throw new Error('Invalid attribute name: ' + attr);
+      return { kind: 'item', attr: segments[0], rule: op === ':=' ? segments[segments.length - 1] : null,
+        op: op, raw: raw, value: decodedValue(raw), parts: op === '=' ? wildcardParts(raw) : null };
+    }
+    var ast = parse();
+    if (pos !== input.length) throw new Error('Trailing filter input at ' + pos);
+    return ast;
+  }
+  function walkRecursiveDN(startDN, attr, targetDN, entries, visited) {
+    var key = normalizeDN(startDN);
+    if (!key || visited.has(key)) return false;
+    visited.add(key);
+    var entry = entries.find(function (e) { return normalizeDN(e.dn) === key; });
+    if (!entry) return false;
+    var linked = attr === 'memberOf'
+      ? printableAttrs(entry, entries).memberOf || []
+      : getRaw(entry, 'member');
+    return linked.some(function (dn) {
+      return normalizeDN(dn) === normalizeDN(targetDN) ||
+        walkRecursiveDN(dn, attr, targetDN, entries, visited);
+    });
+  }
+  function matches(entry, ast, entries) {
+    if (ast.kind === '&') return ast.children.every(function (x) { return matches(entry, x, entries); });
+    if (ast.kind === '|') return ast.children.some(function (x) { return matches(entry, x, entries); });
+    if (ast.kind === '!') return !matches(entry, ast.child, entries);
+    var values = getRaw({ attributes: printableAttrs(entry, entries) }, ast.attr);
+    if (ast.op === ':=') {
+      if (ast.rule === '1.2.840.113556.1.4.1941') {
+        if (ast.attr.toLowerCase() !== 'memberof' && ast.attr.toLowerCase() !== 'member')
+          throw new Error('Transitive matching is supported for member/memberOf only');
+        return walkRecursiveDN(entry.dn, ast.attr.toLowerCase() === 'memberof' ? 'memberOf' : 'member', ast.value, entries, new Set());
+      }
+      if (ast.rule === '1.2.840.113556.1.4.803') {
+        var mask = Number(ast.value);
+        if (!Number.isSafeInteger(mask) || mask < 0) return false;
+        return values.some(function (v) { return (Number(v) & mask) === mask; });
+      }
+      if (ast.rule === '1.2.840.113556.1.4.804') {
+        var bits = Number(ast.value);
+        if (!Number.isSafeInteger(bits) || bits < 0) return false;
+        return values.some(function (v) { return (Number(v) & bits) !== 0; });
+      }
+      throw new Error('Unsupported matching rule: ' + ast.rule);
+    }
+    if (ast.op === '=' && ast.raw === '*') return values.length > 0;
+    if (ast.op === '=' && ast.parts.length > 1) {
+      var re = new RegExp('^' + ast.parts.map(escapeRE).join('.*') + '$', 'iu');
+      return values.some(function (v) { return re.test(String(v)); });
+    }
+    return values.some(function (v) {
+      if (ast.op === '=' || ast.op === '~=') return eq(v, ast.value);
+      var a = String(v), b = ast.value;
+      if (!Number.isNaN(Number(a)) && !Number.isNaN(Number(b)) && a !== '' && b !== '') {
+        return ast.op === '>=' ? Number(a) >= Number(b) : Number(a) <= Number(b);
+      }
+      var c = a.toLowerCase().localeCompare(b.toLowerCase());
+      return ast.op === '>=' ? c >= 0 : c <= 0;
+    });
+  }
+}
+
+ActiveDirectory.RESULT_CODES = Object.freeze({
+    success: 0, operationsError: 1, protocolError: 2, sizeLimitExceeded: 4,
+    compareFalse: 5,
+    compareTrue: 6, authMethodNotSupported: 7, strongAuthRequired: 8,
+    noSuchAttribute: 16, attributeOrValueExists: 20, invalidAttributeSyntax: 21,
+    invalidCredentials: 49, insufficientAccessRights: 50,
+    noSuchObject: 32, invalidDNSyntax: 34,
+    entryAlreadyExists: 68, notAllowedOnNonLeaf: 66,
+    unwillingToPerform: 53, other: 80
+  });
+
+// Optional compatibility utility: snapshots are generated from the inline constructor data.
+ActiveDirectory.sampleDB = function () {
+  return new ActiveDirectory().DB;
+};

@@ -1,4 +1,4 @@
-# ActiveDirectoryJS v0.1.1
+# ActiveDirectoryJS v0.1.2.2
 
 An offline, standalone, JavaScript **LDAP API simulator** backed by an inline JavaScript object literal that represents a fictional Active Directory. It does **not** implement LDAP network sockets or LDAP BER encoding. Designed for browser-based simulations, including a PowerShellJS adapter.
 
@@ -104,17 +104,21 @@ The sample dataset includes the group `GG_All_Staff` with nested `GG_IT_Admins`,
 
 ## Inline directory dataset — single source of truth
 
-The default directory is **literal data inside the constructor**, not a runtime resource:
+The default directory is **literal data inside the constructor**, not a runtime resource. There is **no IIFE, factory, CommonJS export, or module wrapper**. The browser loads a classic script and receives a global `ActiveDirectory` function:
 
 ```javascript
+// res/ActiveDirectory.js (shortened illustration)
 function ActiveDirectory(seed, options) {
   this.DB = {
     domain: 'contoso.local',
     baseDN: 'DC=contoso,DC=local',
-    entries: [ /* domain, OUs, users, security groups, computer */ ]
+    entries: [ /* inline users, groups, OUs, computers */ ]
   };
-  // Optional in-memory seed override (deep-cloned), options and binding state.
-  this.LDAP = function (request, params) { /* all LDAP operation dispatch */ };
+  // Optional in-memory seed override, options and binding state.
+  this.LDAP = function (request, params) {
+    // LDAP request processing, operating on this.DB
+  };
+  // Private helper functions and local constants are declared inside this function.
 }
 
 var oAD = new ActiveDirectory();
@@ -150,4 +154,8 @@ With Node.js installed:
 node res/ActiveDirectory.test.js
 ```
 
-Expected: `32 tests passed.`
+Expected: `33 tests passed.`
+
+### Node test runner without CommonJS in the emulator
+
+`res/ActiveDirectory.test.js` uses Node's `vm.runInThisContext()` to load the browser script into a test context. `res/ActiveDirectory.js` itself contains **no** `require()`, `module.exports`, `export`, or wrapper. Browser code uses the global `ActiveDirectory` directly with a classic script tag.
