@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PowerShellJS v0.1 — Browser Simulator</title>
+  <link rel="stylesheet" href="COM_TERM.css">
+  <link rel="stylesheet" href="PS_APP.css">
+</head>
+<body>
+  <main class="page">
+    <header class="top">
+      <div><h1>PowerShellJS <span class="mini">v0.1</span></h1>
+        <p class="subtitle">Client-side PowerShell-inspired interpreter · simulated files · no operating-system access</p></div>
+      <span class="tag">100% offline • No backend</span>
+    </header>
+    <div class="layout">
+      <section class="panel" aria-label="PowerShell terminal">
+        <div class="panelhead"><h2>Terminal</h2><div class="controls"><span id="status" class="status" aria-live="polite">Ready</span><button id="reset" title="Reset variables and virtual files">Reset session</button></div></div>
+        <div class="terminal-shell"><div id="terminal" aria-label="Command terminal"></div></div>
+      </section>
+      <section class="panel" aria-label="PowerShell script editor">
+        <div class="panelhead"><h2>Script editor</h2><span class="mini">Multiline .ps1 sandbox</span></div>
+        <div class="sample-bar" aria-label="Example scripts">
+          <button type="button" data-example="hello">Variables</button>
+          <button type="button" data-example="files">Virtual files</button>
+          <button type="button" data-example="pipeline">Pipelines</button>
+        </div>
+        <label class="sr-only" for="script">PowerShell script</label>
+        <textarea id="script" class="editor" autocomplete="off" spellcheck="false"># Your first browser-only PowerShell script
+$name = "Developer"
+$count = 2 + 3
+Write-Host "Welcome, $name!"
+Write-Output "2 + 3 = $count"
+Get-Location
+Get-ChildItem</textarea>
+        <div class="toolbar">
+          <button class="primary" type="button" id="run">Run script</button>
+          <button type="button" id="copy">Copy script</button>
+          <span class="status">Ctrl/Cmd + Enter to run</span>
+        </div>
+      </section>
+    </div>
+    <section class="notes" aria-label="Simulator information">
+      <p><strong>Start:</strong> Type <code>Get-Command</code>, <code>Get-Help Get-ChildItem</code>, <code>Get-ChildItem</code>, <code>Get-Content README.txt</code>, or run a sample script.</p>
+      <p><strong>Boundary:</strong> This is a subset simulator, not Microsoft PowerShell. Files exist only in memory; unknown commands, advanced syntax, external tools and OS access are not supported. Reset restores the example environment.</p>
+    </section>
+  </main>
+  <script src="COM_TERM.js"></script>
+  <script src="PS_CORE.js"></script>
+  <script src="PS_TERMINAL_ADAPTER.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      const registry = new PowerShellTerminal.EngineRegistry();
+      registry.register('builtin-v0.1', () => new PowerShellJS.PowerShellSimulator());
+      const terminal = new TERMINAL({
+        container:'terminal', storageKey:'PowerShellJS_v01_history',
+        welcome:'PowerShellJS v0.1 — simulated session. Type Get-Command.\n',
+        prompt:'PS C:\\Users\\Demo',separator:'&gt; ', preserveWhitespace:true
+      });
+      const status = document.querySelector('#status');
+      const adapter = new PowerShellTerminal.TerminalEngineAdapter(terminal,registry.create('builtin-v0.1'),{
+        onStatus: value => {status.textContent = value;}
+      });
+      const editor=document.querySelector('#script');
+      const samples={
+        hello: '# Variables, interpolation and arithmetic\n$name = "Ada"\n$count = 5 * 3\nWrite-Host "Hello, $name"\nWrite-Output "Result: $count"\n$count',
+        files: '# Files are simulated, not written to your computer\nGet-Location\nGet-ChildItem C:\\Temp\nNew-Item -Path C:\\Temp\\notes.txt -ItemType File\nSet-Content -Path C:\\Temp\\notes.txt -Value "Saved in virtual memory"\nGet-Content C:\\Temp\\notes.txt\nTest-Path C:\\Temp\\notes.txt',
+        pipeline: '# Objects flow between supported cmdlets\nGet-ChildItem C:\\Users\\Demo | Where-Object { $_.Length -gt 10 } | Select-Object Name,Length\nGet-Command | Sort-Object -Property Name | Select-Object Name'
+      };
+      document.querySelector('#run').addEventListener('click',()=>adapter.submit(editor.value));
+      document.querySelector('#reset').addEventListener('click',()=>adapter.reset());
+      document.querySelector('#copy').addEventListener('click',async()=>{
+        try {await navigator.clipboard.writeText(editor.value);status.textContent='Copied';}
+        catch (_) {editor.focus();editor.select();status.textContent='Select and copy script';}
+      });
+      document.querySelectorAll('[data-example]').forEach(button=>button.addEventListener('click',()=>{editor.value=samples[button.dataset.example];editor.focus();}));
+      editor.addEventListener('keydown',event=>{
+        if(event.key==='Enter' && (event.ctrlKey || event.metaKey)) {event.preventDefault();adapter.submit(editor.value);}
+        if(event.key==='Tab' && !event.shiftKey) {
+          event.preventDefault();const a=editor.selectionStart,b=editor.selectionEnd;
+          editor.setRangeText('  ',a,b,'end');
+        }
+      });
+      // Deliberately export a small development API without binding it to COM_TERM internals.
+      window.PowerShellJSApp={registry,adapter,terminal,get engine(){return adapter.engine;}};
+    })();
+  </script>
+</body>
+</html>

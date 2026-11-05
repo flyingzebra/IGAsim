@@ -1,0 +1,39 @@
+:root { color-scheme: dark; --bg:#10151f; --panel:#1a2230; --line:#344155; --text:#e9eef9; --muted:#a7b5c8; --accent:#9ac7ff; --focus:#c4d9ff; }
+* { box-sizing: border-box; }
+html, body { margin:0; min-height:100%; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; }
+body { padding:22px; }
+.page { margin:0 auto; max-width:1320px; }
+.top {display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:18px;flex-wrap:wrap}
+h1 {font-size:1.6rem;letter-spacing:-.02em;margin:0 0 6px}
+.subtitle {margin:0;color:var(--muted);font-size:.92rem;line-height:1.5}
+.tag {font-size:.8rem;color:#bad7ff;padding:6px 10px;border:1px solid #3d5b7f;border-radius:25px;background:#16243a;white-space:nowrap}
+.layout {display:grid;grid-template-columns:minmax(0,1.12fr) minmax(360px,.88fr);gap:16px}
+.panel {border:1px solid var(--line);background:var(--panel);border-radius:13px;overflow:hidden;min-width:0;box-shadow:0 8px 30px #05070b3d}
+.panelhead {display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 15px;border-bottom:1px solid var(--line);min-height:49px}
+.panelhead h2 {margin:0;font-size:.98rem;font-weight:650}
+.mini {font-size:.75rem;color:var(--muted)}
+.terminal-shell {height:520px;min-height:240px;background:#222}
+#terminal {height:100%;width:100%;padding:13px 14px;font-size:13px;font-weight:normal}
+#terminal.VanillaTerm .container {height:100%}
+#terminal.VanillaTerm .command {min-height:20px}
+#terminal.VanillaTerm .command .prompt {white-space:pre}
+#terminal.VanillaTerm output .line {display:flex;white-space:pre-wrap;overflow-wrap:anywhere;align-items:flex-start}
+#terminal.VanillaTerm output .line .prompt {flex-shrink:0}
+#terminal.VanillaTerm output span.serial-stream {line-height:1.55}
+.editor {width:100%;min-height:345px;resize:vertical;border:0;outline:0;background:#141b28;color:#edf3ff;padding:17px;font:13px/1.6 "SFMono-Regular",Consolas,"Courier New",monospace;tab-size:2}
+.editor:focus-visible {box-shadow:inset 0 0 0 2px #587db1}
+.toolbar {display:flex;flex-wrap:wrap;gap:8px;padding:12px;border-top:1px solid var(--line);align-items:center}
+button,select {font:inherit;font-size:13px;border-radius:7px;border:1px solid #4b5d77;color:#e9eef9;background:#2a3649;cursor:pointer;padding:9px 12px}
+button:hover,select:hover {border-color:#9ac7ff;background:#354765}
+button:focus-visible,select:focus-visible {outline:2px solid var(--focus);outline-offset:2px}
+button.primary {background:#b2d5ff;color:#0a2542;border-color:#b2d5ff;font-weight:700}
+button.primary:hover {background:#d6e9ff}
+.controls {display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center}
+.status {color:var(--muted);font-size:.78rem}
+.notes {border:1px solid var(--line);background:#172130;padding:14px 17px;border-radius:12px;margin-top:16px;color:#afc1d5;font-size:.87rem;line-height:1.6}
+.notes p {margin:0 0 8px}.notes p:last-child{margin:0}
+.notes code {color:#d5ebff}
+.sample-bar {display:flex;flex-wrap:wrap;gap:7px;padding:11px 13px;border-bottom:1px solid var(--line)}
+.sample-bar button {padding:6px 9px;font-size:12px}
+.sr-only {position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:850px) {.layout {grid-template-columns:1fr}.terminal-shell {height:350px}.editor {min-height:260px}body{padding:12px}}
