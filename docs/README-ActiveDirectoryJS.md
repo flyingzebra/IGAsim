@@ -4,8 +4,8 @@ An offline, standalone, JavaScript **LDAP API simulator** backed by an inline Ja
 
 ## Files (repository paths)
 
-- `res/ActiveDirectory.js` — public `function ActiveDirectory()`; both `this.DB = {...}` and `this.LDAP = function(...) {...}` are declared inside the constructor.
-- `tools/ActiveDirectory-demo.html` — offline browser console (loads only `../res/ActiveDirectory.js` through a standard `<script>` tag).
+- `res/AD_CORE.js` — public `function ActiveDirectory()`; both `this.DB = {...}` and `this.LDAP = function(...) {...}` are declared inside the constructor.
+- `tools/ActiveDirectory-demo.html` — offline browser console (loads only `../res/AD_CORE.js` through a standard `<script>` tag).
 - `res/ActiveDirectory.test.js` — Node.js regression checks.
 - `tools/ActiveDirectory.sample.json` — optional reference snapshot only; not fetched, imported or used at runtime.
 
@@ -107,7 +107,7 @@ The sample dataset includes the group `GG_All_Staff` with nested `GG_IT_Admins`,
 The default directory is **literal data inside the constructor**, not a runtime resource. There is **no IIFE, factory, CommonJS export, or module wrapper**. The browser loads a classic script and receives a global `ActiveDirectory` function:
 
 ```javascript
-// res/ActiveDirectory.js (shortened illustration)
+// res/AD_CORE.js (shortened illustration)
 function ActiveDirectory(seed, options) {
   this.DB = {
     domain: 'contoso.local',
@@ -126,7 +126,7 @@ var response = oAD.LDAP('search', {filter:'(objectClass=group)'});
 console.log(response.entries, oAD.DB);
 ```
 
-Edit `this.DB` in `res/ActiveDirectory.js` to change the shipped fixture. Each `new ActiveDirectory()` gets an independent default directory. You may still supply **an already available JavaScript object** as the first argument for tests or custom simulations; this does not load a file:
+Edit `this.DB` in `res/AD_CORE.js` to change the shipped fixture. Each `new ActiveDirectory()` gets an independent default directory. You may still supply **an already available JavaScript object** as the first argument for tests or custom simulations; this does not load a file:
 
 ```javascript
 var ownDB = {
@@ -140,7 +140,7 @@ var oAD = new ActiveDirectory(ownDB, {allowWrites:true, requireBind:false});
 
 ## Intended PowerShellJS integration
 
-The separate PowerShellJS v0.2 currently uses `res/PS_AD.js` with its own in-memory directory, and has not yet been wired to this emulator. For future unification, PowerShellJS should translate its parsed AST to a request object; it should not know the internal `DB.entries` layout. E.g. `Get-ADUser -Filter *` maps to a `search` with `(objectCategory=person)` and optional PowerShell-side projection. Keep LDAP emulation and PowerShell command parsing as separate modules.
+The PowerShellJS v0.2 simulator now loads `res/AD_CORE.js` as its only directory engine. The `PowerShellAD` compatibility API exposed by the same file translates PowerShell-specific `-Filter` syntax, cmdlet object projections and membership operations onto an instance of `ActiveDirectory` and its public `LDAP()` method. The original `res/PS_AD.js` is retired. Both applications use the same engine but construct **separate in-memory directory instances**, preserving their respective `corp.example.com` and `contoso.local` fixtures. See `docs/AD_CORE_INTEGRATION.md` for architecture details.
 
 ## Limits of v0.1
 
@@ -158,4 +158,4 @@ Expected: `33 tests passed.`
 
 ### Node test runner without CommonJS in the emulator
 
-`res/ActiveDirectory.test.js` uses Node's `vm.runInThisContext()` to load the browser script into a test context. `res/ActiveDirectory.js` itself contains **no** `require()`, `module.exports`, `export`, or wrapper. Browser code uses the global `ActiveDirectory` directly with a classic script tag.
+`res/ActiveDirectory.test.js` uses Node's `vm.runInThisContext()` to load the browser script into a test context. `res/AD_CORE.js` itself contains **no** `require()`, `module.exports`, `export`, or wrapper. Browser code uses the global `ActiveDirectory` directly with a classic script tag.

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-for (const filename of ['PS_PARSER.js','PS_AD.js','PS_AD_COMMANDS.js','PS_CORE.js'])
+for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','PS_CORE.js'])
 {
     const filepath = path.join(__dirname, filename);
     vm.runInThisContext(fs.readFileSync(filepath, 'utf8'), { filename: filepath });

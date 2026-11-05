@@ -11,7 +11,7 @@ function PowerShellJSContainer()
     const ParserV2 = typeof PowerShellParser !== 'undefined' ? PowerShellParser : null;
     const AD = typeof PowerShellAD !== 'undefined' ? PowerShellAD : null;
     const ADCmds = typeof PowerShellADCommands !== 'undefined' ? PowerShellADCommands : null;
-    if (!ParserV2 || !AD || !ADCmds) throw new Error('Load PS_PARSER.js, PS_AD.js and PS_AD_COMMANDS.js before PS_CORE.js.');
+    if (!ParserV2 || !AD || !ADCmds) throw new Error('Load PS_PARSER.js, AD_CORE.js and PS_AD_COMMANDS.js before PS_CORE.js.');
 
     const MAX_SOURCE_LENGTH = 100000;
     const MAX_STATEMENTS = 500;

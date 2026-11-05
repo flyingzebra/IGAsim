@@ -40,7 +40,7 @@ This is a **structural illustration**, not a replacement for the full simulator 
 | File | Top-level container | Public interface kept |
 |---|---|---|
 | `PS_PARSER.js` | `PowerShellParserContainer()` | `PowerShellParser.parse()`, `.partition()`, `.preprocess()`, `.SyntaxErrorPS` |
-| `PS_AD.js` | `PowerShellADContainer()` | `PowerShellAD.SimulatedDirectory`, `.DirectoryError`, `.seed()`, filters |
+| `AD_CORE.js` | `PowerShellADContainer()` | `PowerShellAD.SimulatedDirectory`, `.DirectoryError`, `.seed()`, filters |
 | `PS_AD_COMMANDS.js` | `PowerShellADCommandsContainer()` | `PowerShellADCommands.registerADCommands()` |
 | `PS_CORE.js` | `PowerShellJSContainer()` | `PowerShellJS.PowerShellSimulator`, `.VirtualFS`, `.Session`, `.PSError`, `.parse()` |
 | `PS_TERMINAL_ADAPTER.js` | `PowerShellTerminalContainer()` | `PowerShellTerminal.EngineRegistry`, `.TerminalEngineAdapter` |
@@ -54,13 +54,13 @@ The **existing script order is unchanged**:
 ```html
 <script src="res/COM_TERM.js"></script>
 <script src="res/PS_PARSER.js"></script>
-<script src="res/PS_AD.js"></script>
+<script src="res/AD_CORE.js"></script>
 <script src="res/PS_AD_COMMANDS.js"></script>
 <script src="res/PS_CORE.js"></script>
 <script src="res/PS_TERMINAL_ADAPTER.js"></script>
 ```
 
-`PS_AD_COMMANDS.js` uses the already loaded `PowerShellAD` namespace. `PS_CORE.js` similarly uses `PowerShellParser`, `PowerShellAD` and `PowerShellADCommands` directly. No JSON fetch, bundler, server, Node module or external resource has been added.
+`PS_AD_COMMANDS.js` uses the `PowerShellAD` compatibility namespace exposed by `AD_CORE.js`. `PS_CORE.js` similarly uses `PowerShellParser`, `PowerShellAD` and `PowerShellADCommands` directly. No JSON fetch, bundler, server, Node module or external resource has been added.
 
 ## Error constructor compatibility
 
@@ -77,7 +77,7 @@ node res/PS_TESTS_v01.js
 
 Expected: **50** v0.2 tests and **18** v0.1 tests. The additional v0.2 tests exercise the constructor layout, module loading in a browser-like context, independent instances, native error behavior, and the terminal adapter.
 
-The legacy `PS_AD.js` simulated directory remains separate from `res/ActiveDirectory.js` and its `LDAP()` method. Consolidating those directories is a future integration task, **not part of this syntax-and-container refactor**.
+The original directory implementation has been consolidated into `res/AD_CORE.js`. `PowerShellAD.SimulatedDirectory` now acts as a compatibility view around `ActiveDirectory.LDAP()` rather than holding a separate mutable database. See `docs/AD_CORE_INTEGRATION.md`.
 
 ## Trade-off
 

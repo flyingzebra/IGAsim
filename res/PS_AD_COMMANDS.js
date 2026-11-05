@@ -3,7 +3,7 @@ function PowerShellADCommandsContainer()
 {
     'use strict';
     const AD = typeof PowerShellAD !== 'undefined' ? PowerShellAD : null;
-    if (!AD) throw new Error('Load PS_AD.js before PS_AD_COMMANDS.js.');
+    if (!AD) throw new Error('Load AD_CORE.js before PS_AD_COMMANDS.js.');
     const { DirectoryError, attr } = AD;
     const str = v => String(v ?? ''), lc = v => str(v).toLowerCase();
     const list = v => Array.isArray(v) ? v : str(v ?? '').split(',').map(s => s.trim()).filter(Boolean);
@@ -48,6 +48,12 @@ function PowerShellADCommandsContainer()
     function registerADCommands(engine)
     {
         const register = (name, description, run) => engine.registerCommand({ name, description, aliases: [], run });
+        function ldapModify(directory, dn, changes)
+        {
+            const response = directory.LDAP('modify', { dn, changes });
+            if (response.resultCode !== 0)
+                throw new DirectoryError(response.message || response.code, 'LDAPModifyError');
+        }
         function makeReader(name, kind)
         {
             register(name, 'Query simulated Active Directory ' + kind + ' objects. Supports -Identity, -Filter, -LDAPFilter, -SearchBase, -SearchScope, -Properties.', async ({ args, input, session }) =>
@@ -98,19 +104,23 @@ function PowerShellADCommandsContainer()
         register('Set-ADUser', 'Modify an in-memory user (supported: -Department, -Title, -EmailAddress).', async ({ args, session }) =>
         {
             parseParams(args, ['identity','department','title','emailaddress','passthru']); const id = identityOf(args, []); if (!id) throw new DirectoryError('Set-ADUser requires -Identity.', 'MissingParameter');
-            const entry = session.directory.get(id, 'user'); let changes = 0;
-            for (const [key, field] of [['department','department'], ['title','title'], ['emailaddress','mail']]) if (args.has(key))
-            {
-                entry[field] = str(args.get(key));
-                changes++;
-            }
-            if (!changes) throw new DirectoryError('Set-ADUser requires a supported modification.', 'MissingParameter');
+            const entry = session.directory.get(id, 'user');
+            const changes = [];
+            for (const [key, field] of [['department','department'], ['title','title'], ['emailaddress','mail']])
+                if (args.has(key)) changes.push({ operation: 'replace', attribute: field, values: [str(args.get(key))] });
+            if (!changes.length) throw new DirectoryError('Set-ADUser requires a supported modification.', 'MissingParameter');
+            ldapModify(session.directory, entry.distinguishedName, changes);
             return { values: args.has('passthru') ? [project(entry, 'user', 'Department,Title,Mail', session.directory)] : [], messages: [], effects: [] };
         });
         for (const [cmd, enabled] of [['Enable-ADAccount',true], ['Disable-ADAccount',false]]) register(cmd, 'Change a simulated account enabled state.', async ({ args, input, session }) =>
         {
             parseParams(args, ['identity','passthru']); const id = identityOf(args, input); if (!id) throw new DirectoryError(cmd + ' requires -Identity.', 'MissingParameter');
-            const entry = session.directory.get(id, 'user'); entry.Enabled = entry.enabled = enabled; entry.userAccountControl = enabled ? 512 : 514;
+            const entry = session.directory.get(id, 'user');
+            ldapModify(session.directory, entry.distinguishedName, [
+                { operation: 'replace', attribute: 'Enabled', values: [enabled] },
+                { operation: 'replace', attribute: 'enabled', values: [enabled] },
+                { operation: 'replace', attribute: 'userAccountControl', values: [enabled ? 512 : 514] }
+            ]);
             return { values: args.has('passthru') ? [project(entry, 'user', undefined, session.directory)] : [], messages: [], effects: [] };
         });
         for (const [cmd, add] of [['Add-ADGroupMember',true], ['Remove-ADGroupMember',false]]) register(cmd, 'Modify in-memory group membership; -Members accepts a comma-separated identity list.', async ({ args, session }) =>
@@ -118,22 +128,19 @@ function PowerShellADCommandsContainer()
             parseParams(args, ['identity','members','passthru']); const group = session.directory.get(identityOf(args, []), 'group');
             if (!args.has('members')) throw new DirectoryError(cmd + ' requires -Members.', 'MissingParameter');
             const members = list(args.get('members')).map(m => session.directory.get(m));
-            group.member = group.member || [];
+            const updated = [...(group.member || [])];
             for (const member of members)
             {
                 const dn = member.distinguishedName;
-                if (add)
+                if (add && !updated.some(m => lc(m) === lc(dn))) updated.push(dn);
+                if (!add)
                 {
-                    if (!group.member.some(m => lc(m) === lc(dn))) group.member.push(dn);
-                    member.memberOf = member.memberOf || [];
-                    if (!member.memberOf.some(m => lc(m) === lc(group.distinguishedName))) member.memberOf.push(group.distinguishedName);
-                }
-                else
-                {
-                    group.member = group.member.filter(m => lc(m) !== lc(dn));
-                    member.memberOf = (member.memberOf || []).filter(m => lc(m) !== lc(group.distinguishedName));
+                    for (let i = updated.length - 1; i >= 0; i--)
+                        if (lc(updated[i]) === lc(dn)) updated.splice(i, 1);
                 }
             }
+            ldapModify(session.directory, group.distinguishedName,
+                [{ operation: 'replace', attribute: 'member', values: updated }]);
             return { values: args.has('passthru') ? [project(group, 'group', 'member', session.directory)] : [], messages: [], effects: [] };
         });
     }

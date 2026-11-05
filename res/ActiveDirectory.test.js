@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
-const adFile = path.join(__dirname, 'ActiveDirectory.js');
+const adFile = path.join(__dirname, 'AD_CORE.js');
 // A classic browser script: no CommonJS wrapper or exports in the emulator.
 const ActiveDirectory = vm.runInThisContext(fs.readFileSync(adFile, 'utf8') + '\nActiveDirectory;', { filename: adFile });
 const ROOT = 'DC=contoso,DC=local';

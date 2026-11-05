@@ -4,13 +4,13 @@ A **static, browser-only** PowerShell *subset* simulator with a separate parser,
 
 ## Quick start
 
-1. Open **`PowerShellJS_v0.2_standalone.html`** in Chrome/Edge/Firefox/Safari, or open `index.html` in the development folder.
+1. Open **`index.html`** in Chrome/Edge/Firefox/Safari. The standalone LDAP console remains available at `tools/ActiveDirectory-demo.html`.
 2. Use the example buttons (AD users, LDAP filter, Group membership, Modify AD, If / foreach, Virtual files).
 3. Click **Run script** or press Ctrl/Cmd+Enter. You can also type single commands into `COM_TERM`.
 4. Click **Inspect AST** to see the parsed control-flow structure before execution.
 5. **Reset sandbox** reinitializes variables, virtual files, directory users, groups, memberships and the query log. Terminal command history in `localStorage` is separate.
 
-Run the engine tests (Node is used ONLY for tests): `node PS_TESTS.js`. Original backward compatibility checks: `node PS_TESTS_v01.js`.
+Run the engine tests from the repository root (Node is used **only** for tests): `node res/PS_TESTS.js`, `node res/PS_TESTS_v01.js`, `node res/ActiveDirectory.test.js`, and `node res/AD_INTEGRATION_SMOKE.js`.
 
 ## Architecture
 
@@ -25,7 +25,7 @@ PS_CORE.js                            [PowerShell session + execution engine]
   +-- PS_PARSER.js                    [structural lexer/parser and script AST]
   +-- PS_AD_COMMANDS.js               [ActiveDirectory-style cmdlets and Search-LDAP]
          |
-     PS_AD.js                         [simulated LDAP filter evaluator + in-memory AD]
+     AD_CORE.js                       [single ActiveDirectory.LDAP() engine + PowerShell adapter]
          |
      Synthetic seed data             [corp.example.com; 7 users, nested groups, OUs, computers]
 ```
@@ -34,7 +34,7 @@ To embed the interpreter without a terminal:
 
 ```html
 <script src="PS_PARSER.js"></script>
-<script src="PS_AD.js"></script>
+<script src="AD_CORE.js"></script>
 <script src="PS_AD_COMMANDS.js"></script>
 <script src="PS_CORE.js"></script>
 <script>
@@ -47,6 +47,9 @@ ps.execute('Get-ADUser -Filter * -Properties Department')
 Custom fictional directory fixtures are supported programmatically with `new PowerShellJS.PowerShellSimulator({directoryEntries: yourEntries})`. Each entry needs a `distinguishedName` and suitable AD-like attributes, including `objectClass`/`objectCategory`; reset restores a cloned fixture. Only use sanitized data, not production directory exports containing personal or confidential information.
 
 The terminal adapter continues to accept any engine implementing `execute(source)` (returns `{success, output, errors, effects, cwd, objects}`), `getPrompt()` and `reset()`. The supplied `COM_TERM` sources are copied **byte-for-byte**, not modified.
+
+The main application and the standalone LDAP console both load `res/AD_CORE.js`.
+Each page creates its **own in-memory instance**: the PowerShell simulator retains its `corp.example.com` users/groups/computers, while the LDAP demo retains `contoso.local`. `PS_AD.js` is no longer included or needed. See [AD_CORE integration](docs/AD_CORE_INTEGRATION.md).
 
 ## Core v0.2 functionality
 
@@ -95,8 +98,10 @@ Get-LDAPQueryLog
 
 ## Testing
 
-- `node PS_TESTS.js`: 44 regression tests covering parser, control flow, virtual filesystem, AD queries, LDAP filters, bitwise and transitive matching, group mutations, reset and error handling.
-- `node PS_TESTS_v01.js`: original 18 v0.1 compatibility tests.
+- `node res/PS_TESTS.js`: 50 regression tests covering parser, control flow, virtual filesystem, AD queries, LDAP filters, bitwise and transitive matching, group mutations, reset and error handling.
+- `node res/PS_TESTS_v01.js`: original 18 v0.1 compatibility tests.
+- `node res/ActiveDirectory.test.js`: 33 standalone LDAP tests.
+- `node res/AD_INTEGRATION_SMOKE.js`: 14 shared-backend integration tests.
 - JavaScript syntax checks pass. An automated graphical Chromium smoke test **could not complete** in the provided environment; open the standalone HTML in a desktop browser for a manual UI check.
 
 ## References

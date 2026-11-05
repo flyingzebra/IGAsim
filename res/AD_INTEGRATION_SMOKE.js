@@ -1,0 +1,31 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),assert=require('node:assert/strict');
+for(const name of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','PS_CORE.js'])vm.runInThisContext(fs.readFileSync(path.join(__dirname,name),'utf8'),{filename:name});
+const {PowerShellSimulator}=globalThis.PowerShellJS;
+(async()=>{
+let tests=0;function check(x){tests++;console.log('PASS '+x)}
+const ps=new PowerShellSimulator();const d=ps.session.directory;const oAD=d.AD;
+assert.equal(oAD.DB.domain,'corp.example.com');assert.equal(d.all().length,25);check('PowerShell fixture preserved on AD_CORE');
+assert.equal(oAD.LDAP('search',{filter:'(&(objectClass=user)(objectCategory=person))'}).count,7);check('Raw LDAP user search');
+assert.equal(oAD.LDAP('search',{filter:'(userAccountControl:1.2.840.113556.1.4.803:=2)'}).count,1);check('Disabled bitwise');
+assert.equal((await ps.execute('Get-ADUser -Filter *')).objects.length,7);check('PowerShell search');
+assert.equal((await ps.execute('Set-ADUser -Identity leo.chen -Department Test')).success,true);
+assert.equal(oAD.LDAP('search',{filter:'(&(sAMAccountName=leo.chen)(department=Test))'}).count,1);check('PowerShell write visible via LDAP');
+const leo=d.get('leo.chen');const group=d.get('BR_Operations');
+assert.equal((await ps.execute('Add-ADGroupMember -Identity BR_Operations -Members leo.chen')).success,true);
+assert.equal(oAD.LDAP('search',{filter:'(memberOf:1.2.840.113556.1.4.1941:='+group.distinguishedName+')'}).entries.some(e=>e.dn===leo.distinguishedName),true);check('PowerShell group membership visible through LDAP transitive');
+assert.equal((await ps.execute('Remove-ADGroupMember -Identity BR_Operations -Members leo.chen')).success,true);
+assert.equal(oAD.LDAP('search',{filter:'(memberOf:1.2.840.113556.1.4.1941:='+group.distinguishedName+')'}).entries.some(e=>e.dn===leo.distinguishedName),false);check('LDAP derived membership correct after removal');
+assert.equal((await ps.execute('Disable-ADAccount -Identity leo.chen')).success,true);
+assert.equal(oAD.LDAP('search',{filter:'(&(sAMAccountName=leo.chen)(userAccountControl:1.2.840.113556.1.4.803:=2))'}).count,1);check('Disabled bitwise after cmdlet');
+const gp='CN=IntegrationRole,OU=Groups,DC=corp,DC=example,DC=com';const add=oAD.LDAP('add',{dn:gp,attributes:{objectClass:['top','group'],objectCategory:['group'],cn:['IntegrationRole'],name:['IntegrationRole'],sAMAccountName:['IntegrationRole'],member:[]}}); assert.equal(add.resultCode,0,add.message);
+assert.equal((await ps.execute('Get-ADGroup -Identity IntegrationRole')).success,true);check('LDAP add visible via PowerShell');
+assert.equal(oAD.LDAP('modify',{dn:gp,changes:[{operation:'replace',attribute:'member',values:[leo.distinguishedName]}]}).resultCode,0);
+assert.equal((await ps.execute('Get-ADGroupMember -Identity IntegrationRole')).objects.length,1);check('LDAP group modification visible to PowerShell');
+assert.equal(oAD.LDAP('delete',{dn:gp}).resultCode,0);
+assert.equal((await ps.execute('Get-ADGroup -Identity IntegrationRole')).success,false);check('LDAP delete visible to PowerShell');
+assert.equal((await ps.execute('Get-ADGroupMember -Identity APP_Reporting -Recursive')).objects.length,3);check('Recursive membership unchanged');
+ps.reset();assert.equal(ps.session.directory.AD.LDAP('search',{filter:'(department=Test)'}).count,0);check('reset restores PowerShell fixture');
+const separate=new ActiveDirectory();assert.equal(separate.DB.domain,'contoso.local');assert.equal(separate.LDAP('search',{filter:'(objectCategory=person)'}).count,3);check('standalone fixture preserved');
+console.log(tests+' integration checks passed');
+})().catch(e=>{console.error(e.stack);process.exitCode=1});
