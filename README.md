@@ -5,7 +5,7 @@ A **static, browser-only** PowerShell *subset* simulator with a separate parser,
 ## Quick start
 
 1. Open **`index.html`** in Chrome/Edge/Firefox/Safari. The standalone LDAP console remains available at `tools/ActiveDirectory-demo.html`.
-2. Use the example buttons (AD users, LDAP filter, Group membership, Modify AD, If / foreach, Virtual files, Entra ID / Graph).
+2. Use the example buttons (AD users, LDAP filter, Group membership, Modify AD, If / foreach, Virtual files, Entra ID / Graph). Expand **More Entra ID / Graph scripts** for 14 additional read-only and write-oriented Graph scenarios.
 3. Click **Run script** or press Ctrl/Cmd+Enter. You can also type single commands into `COM_TERM`.
 4. Click **Inspect AST** to see the parsed control-flow structure before execution.
 5. **Reset sandbox** reinitializes variables, virtual files, on-premises directory objects, cloud tenant objects, simulated Graph connection and LDAP query log. Terminal command history in `localStorage` is separate.
@@ -66,6 +66,8 @@ Each page creates its **own in-memory instance**: the PowerShell simulator retai
 
 **PowerShell pipeline vs. LDAP query:** These are different layers. The `-LDAPFilter` string is evaluated *inside* the virtual directory; `|` passes **objects** from one PowerShell cmdlet to another. `Search-LDAP` is simulated **in memory**; it does not perform any LDAP network bind. A future real-AD connector would require a separately designed authenticated service/proxy, not direct browser LDAP socket access.
 
+The built-in Graph example library includes tenant inventory, user filtering, paging, nested group membership, directory roles, application inventory, direct Graph REST calls and simulated mutations. See [Graph script library](docs/GRAPH_SCRIPT_LIBRARY.md).
+
 ## Example scripts
 
 ```powershell
@@ -113,6 +115,7 @@ Get-LDAPQueryLog
 ## Testing
 
 - `node res/PS_GRAPH_TESTS.js`: cloud PowerShell cmdlet and integration tests.
+- `node res/PS_GRAPH_SAMPLES.test.js`: all 14 selectable Microsoft Graph example scripts and the UI button wiring.
 - `node res/ENTRA_CORE.test.js`: standalone Graph core tests.
 
 - `node res/PS_TESTS.js`: 50 regression tests covering parser, control flow, virtual filesystem, AD queries, LDAP filters, bitwise and transitive matching, group mutations, reset and error handling.

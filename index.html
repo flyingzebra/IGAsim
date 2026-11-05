@@ -4,6 +4,13 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>PowerShellJS v0.2 — Active Directory Sandbox</title>
   <link rel="stylesheet" href="res/COM_TERM.css"><link rel="stylesheet" href="res/PS_APP.css">
+  <style>
+    .graph-library {border-bottom:1px solid var(--line)}
+    .graph-library summary {cursor:pointer;padding:10px 14px;font-size:13px;color:#d3e5ff}
+    .graph-library summary:hover {color:#fff}
+    .graph-library-label {padding:9px 14px 0;font-size:12px;color:#aebdd2}
+    .graph-library .sample-bar {padding-top:7px}
+  </style>
 </head>
 <body>
 <main class="page">
@@ -37,6 +44,29 @@
         <button type="button" data-example="files">Virtual files</button>
         <button type="button" data-example="graph">Entra ID / Graph</button>
       </nav>
+      <details class="graph-library" id="graph-library">
+        <summary>More Entra ID / Graph scripts (14)</summary>
+        <div class="graph-library-label">Read-only examples</div>
+        <nav class="sample-bar" aria-label="Read-only Microsoft Graph examples">
+          <button type="button" data-example="graphTenant" title="Tenant overview">Tenant overview</button>
+          <button type="button" data-example="graphITUsers" title="IT and enabled users">IT and enabled users</button>
+          <button type="button" data-example="graphPaging" title="Paging and counts">Paging and counts</button>
+          <button type="button" data-example="graphMembership" title="Direct/nested groups">Direct/nested groups</button>
+          <button type="button" data-example="graphRoles" title="Directory role members">Directory role members</button>
+          <button type="button" data-example="graphApplications" title="Apps, principals, devices">Apps, principals, devices</button>
+          <button type="button" data-example="graphRequest" title="Raw Graph API requests">Raw Graph API requests</button>
+          <button type="button" data-example="graphHybrid" title="Compare AD and Entra">Compare AD and Entra</button>
+        </nav>
+        <div class="graph-library-label">Changes simulated data — use Reset sandbox to restore</div>
+        <nav class="sample-bar" aria-label="Microsoft Graph mutation examples">
+          <button type="button" data-example="graphEnable" title="Enable cloud account">Enable cloud account</button>
+          <button type="button" data-example="graphNewUser" title="Create cloud user">Create cloud user</button>
+          <button type="button" data-example="graphNewGroup" title="Create security group">Create security group</button>
+          <button type="button" data-example="graphMembershipEdit" title="Add/remove group member">Add/remove group member</button>
+          <button type="button" data-example="graphPatch" title="Graph PATCH update">Graph PATCH update</button>
+          <button type="button" data-example="graphAppRegistration" title="Register application">Register application</button>
+        </nav>
+      </details>
       <label class="sr-only" for="script">PowerShell script source</label>
       <textarea id="script" class="editor" spellcheck="false" autocomplete="off"># Search a simulated Active Directory
 Get-ADUser -Filter { Enabled -eq $true } -Properties Department |
@@ -78,6 +108,106 @@ Get-ADUser -Filter { Enabled -eq $true } -Properties Department |
   files:'# Original virtual Windows file system still works\nGet-Location\nGet-ChildItem C:\\Temp\nSet-Content C:\\Temp\\hello.txt -Value "Saved in memory"\nGet-Content C:\\Temp\\hello.txt',
   graph:'# Connect to a simulated Entra tenant (no real Microsoft login)\nConnect-MgGraph -Scopes "User.Read.All,Group.Read.All"\nGet-MgUser -Filter "department eq \'IT\'" -Property "id,displayName,department"\nGet-MgGroup -All'
  };
+ Object.assign(samples, {
+  graphTenant: [
+    "# Simulated Microsoft Entra tenant and session",
+    "Connect-MgGraph -Scopes \"User.Read.All,Group.Read.All\"",
+    "Get-MgContext",
+    "Get-MgOrganization",
+    "Get-MgUser -All | Select-Object displayName,userPrincipalName",
+    "Get-MgGroup -All | Select-Object displayName,description"
+  ].join("\n"),
+  graphITUsers: [
+    "# OData filtering is different from AD LDAP filtering",
+    "Connect-MgGraph -Scopes \"User.Read.All\"",
+    "Get-MgUser -Filter \"department eq 'IT'\" -Property \"id,displayName,department,accountEnabled\" |",
+    "  Select-Object displayName,department,accountEnabled",
+    "Get-MgUser -Filter \"accountEnabled eq false\" -Property \"displayName,userPrincipalName,accountEnabled\""
+  ].join("\n"),
+  graphPaging: [
+    "# -Top limits a page; -All follows @odata.nextLink",
+    "Connect-MgGraph -Scopes \"User.Read.All\"",
+    "Get-MgUser -Top 1 -CountVariable userCount",
+    "$userCount",
+    "Get-MgUser -All -Top 1 -Property \"id,displayName,department\" |",
+    "  Select-Object displayName,department"
+  ].join("\n"),
+  graphMembership: [
+    "# Compare direct with transitive membership in a nested group",
+    "Connect-MgGraph -Scopes \"Group.Read.All\"",
+    "Get-MgGroup -All | Select-Object displayName,id",
+    "Get-MgGroupMember -GroupId f0000000-0000-4000-8000-000000000202 |",
+    "  Select-Object displayName,id",
+    "Get-MgGroupTransitiveMember -GroupId f0000000-0000-4000-8000-000000000202 |",
+    "  Select-Object displayName,id"
+  ].join("\n"),
+  graphRoles: [
+    "# Inspect fictional directory role assignments",
+    "Connect-MgGraph -Scopes \"RoleManagement.Read.Directory\"",
+    "Get-MgDirectoryRole -All | Select-Object displayName,id",
+    "Get-MgDirectoryRoleMember -DirectoryRoleId f0000000-0000-4000-8000-000000000601 |",
+    "  Select-Object displayName,userPrincipalName"
+  ].join("\n"),
+  graphApplications: [
+    "# Inventory the tenant's applications, service principals and devices",
+    "Connect-MgGraph -Scopes \"Application.Read.All,Device.Read.All\"",
+    "Get-MgApplication -All | Select-Object displayName,appId",
+    "Get-MgServicePrincipal -All | Select-Object displayName,appId,accountEnabled",
+    "Get-MgDevice -All | Select-Object displayName,operatingSystem,accountEnabled"
+  ].join("\n"),
+  graphRequest: [
+    "# REST-style Graph responses (including @odata.nextLink)",
+    "Connect-MgGraph -Scopes \"User.Read.All,Group.Read.All\"",
+    "Invoke-MgGraphRequest -Method GET -Uri '/v1.0/users?$top=1'",
+    "Invoke-MgGraphRequest -Method GET -Uri '/v1.0/groups?$select=id,displayName'"
+  ].join("\n"),
+  graphHybrid: [
+    "# Separate fictional directories: no synchronization is implied",
+    "Get-ADUser -Filter * | Select-Object Name,SamAccountName,Department",
+    "Connect-MgGraph -Scopes \"User.Read.All\"",
+    "Get-MgUser -All | Select-Object displayName,userPrincipalName,department"
+  ].join("\n"),
+  graphEnable: [
+    "# Changes are only in memory: Reset sandbox restores the original state",
+    "Connect-MgGraph -Scopes \"User.ReadWrite.All\"",
+    "Get-MgUser -UserId chloe.rivera@northwind.example -Property \"displayName,accountEnabled\"",
+    "Update-MgUser -UserId chloe.rivera@northwind.example -AccountEnabled $true -PassThru",
+    "Get-MgUser -UserId chloe.rivera@northwind.example -Property \"displayName,accountEnabled\""
+  ].join("\n"),
+  graphNewUser: [
+    "# Create a fictional user; password is not persisted by the simulator",
+    "Connect-MgGraph -Scopes \"User.ReadWrite.All\"",
+    "New-MgUser -DisplayName \"Dana Owens\" -UserPrincipalName dana@northwind.example -MailNickname dana -AccountEnabled $true -PasswordProfile '{\"password\":\"SIMULATED-PASSWORD\"}'",
+    "Get-MgUser -UserId dana@northwind.example -Property \"id,displayName,userPrincipalName,accountEnabled\""
+  ].join("\n"),
+  graphNewGroup: [
+    "# Create a cloud security group and inspect it",
+    "Connect-MgGraph -Scopes \"Group.ReadWrite.All\"",
+    "New-MgGroup -DisplayName \"Project Sunset\" -MailNickname project-sunset -MailEnabled $false -SecurityEnabled $true -GroupTypes \"\"",
+    "Get-MgGroup -Filter \"displayName eq 'Project Sunset'\""
+  ].join("\n"),
+  graphMembershipEdit: [
+    "# Add a new direct group member, inspect, then undo",
+    "Connect-MgGraph -Scopes \"GroupMember.ReadWrite.All\"",
+    "New-MgGroupMemberByRef -GroupId f0000000-0000-4000-8000-000000000201 -DirectoryObjectId f0000000-0000-4000-8000-000000000102",
+    "Get-MgGroupMember -GroupId f0000000-0000-4000-8000-000000000201 | Select-Object displayName,id",
+    "Remove-MgGroupMemberByRef -GroupId f0000000-0000-4000-8000-000000000201 -DirectoryObjectId f0000000-0000-4000-8000-000000000102",
+    "Get-MgGroupMember -GroupId f0000000-0000-4000-8000-000000000201 | Select-Object displayName,id"
+  ].join("\n"),
+  graphPatch: [
+    "# Update an attribute using Graph's REST-style endpoint",
+    "Connect-MgGraph -Scopes \"User.ReadWrite.All\"",
+    "Invoke-MgGraphRequest -Method PATCH -Uri '/v1.0/users/f0000000-0000-4000-8000-000000000101' -Body '{\"jobTitle\":\"Platform Lead\"}'",
+    "Get-MgUser -UserId ada.martin@northwind.example -Property \"displayName,jobTitle\""
+  ].join("\n"),
+  graphAppRegistration: [
+    "# Create a simulated app registration and linked service principal",
+    "Connect-MgGraph -Scopes \"Application.ReadWrite.All\"",
+    "New-MgApplication -DisplayName \"Inventory Demo API\" -SignInAudience AzureADMyOrg",
+    "Get-MgApplication -Filter \"displayName eq 'Inventory Demo API'\"",
+    "Get-MgServicePrincipal -All | Select-Object displayName,appId"
+  ].join("\n")
+ });
  function refreshStats(){entryCount.textContent=adapter.engine.session.directory.all().length+' objects';}
  document.getElementById('run').addEventListener('click',async()=>{await adapter.submit(editor.value);refreshStats();});
  document.getElementById('reset').addEventListener('click',async()=>{await adapter.reset();refreshStats();});
