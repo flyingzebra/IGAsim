@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','PS_CORE.js'])
+for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js'])
 {
     const filepath = path.join(__dirname, filename);
     vm.runInThisContext(fs.readFileSync(filepath, 'utf8'), { filename: filepath });
@@ -262,7 +262,7 @@ async function runTests()
     });
     await test('Public modules use plain constructor containers without class or IIFE wrappers', () =>
     {
-        for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'])
+        for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'])
         {
             const source = fs.readFileSync(path.join(__dirname, filename), 'utf8');
             assert.doesNotMatch(source, /\bclass\s+[A-Za-z_]/);
@@ -321,7 +321,7 @@ async function runTests()
     await test('Classic script loading works without CommonJS globals', async () =>
     {
         const browser = vm.createContext({ console, TextEncoder, TextDecoder });
-        for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'])
+        for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'])
         {
             const filepath = path.join(__dirname, filename);
             vm.runInContext(fs.readFileSync(filepath, 'utf8'), browser, { filename: filepath });

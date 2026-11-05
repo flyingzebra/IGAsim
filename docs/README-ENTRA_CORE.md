@@ -10,7 +10,7 @@
 - No `class`, IIFE, factory wrapper, CommonJS export, external JSON, `fetch()`, real tokens, LDAP or network dependency.
 - Conventions: `docs/CODING_CONVENTIONS.md` (Allman executable blocks, short one-line helpers, compact scalar arrays).
 
-This module is **not** currently loaded by `index.html`. `AD_CORE.js` continues to power the on-prem AD/LDAP simulator. PowerShell Graph/Entra cmdlets can be added later through a separate command adapter, without changing this core.
+This module is loaded by `index.html`, alongside `res/PS_GRAPH_COMMANDS.js`. The adapter registers simulated Microsoft Graph PowerShell cmdlets (such as `Connect-MgGraph`, `Get-MgUser`, `Get-MgGroup`, and `Invoke-MgGraphRequest`) in PowerShellJS while keeping `AD_CORE.js` for on-prem AD/LDAP. See [the PowerShell Graph command guide](PS_GRAPH_COMMANDS.md).
 
 ## Browser usage
 
@@ -129,7 +129,7 @@ oEntra.Reset(); // restore original dataset, reset IDs and clear the session
 
 The default tenant is `northwind.example` with three users (one disabled), three groups (nested security groups plus a Microsoft 365 group), one application, one service principal, one directory role and one device. All identifiers and account details are fictional. Default data may be edited directly inside the constructor, or a fully formed in-memory `seed` object can be supplied. No JSON file is loaded.
 
-For future PowerShell integration, we recommend keeping `ENTRA_CORE.js` independent and introducing `PS_GRAPH_COMMANDS.js` as an adapter that translates `Get-MgUser`, `Get-MgGroup`, `Invoke-MgGraphRequest`, `Get-EntraUser`, etc. into `oEntra.Graph(...)` calls. Keep the simulated Entra directory separate from the on-prem `AD_CORE.js` LDAP backend; hybrid synchronization should be a later explicit module.
+PowerShellJS integration is provided in `PS_GRAPH_COMMANDS.js`, which translates `Get-MgUser`, `Get-MgGroup`, `Invoke-MgGraphRequest` and related commands to `EntraDirectory.Graph(...)`. The core remains independent of PowerShell, as do the on-prem `AD_CORE.js` LDAP backend and its fixture. `Get-Entra*` aliases and hybrid synchronization are not implemented in this version.
 
 ## Run tests
 

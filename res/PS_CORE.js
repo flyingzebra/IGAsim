@@ -11,6 +11,9 @@ function PowerShellJSContainer()
     const ParserV2 = typeof PowerShellParser !== 'undefined' ? PowerShellParser : null;
     const AD = typeof PowerShellAD !== 'undefined' ? PowerShellAD : null;
     const ADCmds = typeof PowerShellADCommands !== 'undefined' ? PowerShellADCommands : null;
+    const GraphCmds = typeof PowerShellGraphCommands !== 'undefined' ? PowerShellGraphCommands : null;
+    if (typeof EntraDirectory === 'undefined' || !GraphCmds)
+        throw new Error('Load ENTRA_CORE.js and PS_GRAPH_COMMANDS.js before PS_CORE.js.');
     if (!ParserV2 || !AD || !ADCmds) throw new Error('Load PS_PARSER.js, AD_CORE.js and PS_AD_COMMANDS.js before PS_CORE.js.');
 
     const MAX_SOURCE_LENGTH = 100000;
@@ -355,16 +358,30 @@ function PowerShellJSContainer()
         {
             this.fs.reset();
             this.directory.reset(this.directorySeed);
+            this.entra.Reset();
             this.variables.clear();
         };
 
         this.snapshot = function()
         {
-            return { cwd: this.fs.cwd, variables: Object.fromEntries(this.variables), filesystem: this.fs.snapshot(), directory: { base: this.directory.root, count: this.directory.all().length, entries: this.directory.snapshot() } };
+            return {
+                cwd: this.fs.cwd,
+                variables: Object.fromEntries(this.variables),
+                filesystem: this.fs.snapshot(),
+                directory: { base: this.directory.root, count: this.directory.all().length, entries: this.directory.snapshot() },
+                entra: {
+                    tenantId: this.entra.DB.tenantId,
+                    connected: this.entra.Session.connected,
+                    scopes: this.entra.Session.scopes.slice(),
+                    users: this.entra.DB.users.length,
+                    groups: this.entra.DB.groups.length
+                }
+            };
         };
         this.fs = new VirtualFS();
         this.directorySeed = options.directoryEntries || null;
         this.directory = new AD.SimulatedDirectory(this.directorySeed);
+        this.entra = new EntraDirectory(options.entraSeed, { requireAuth: true });
         this.variables = new Map();
     }
 
@@ -691,6 +708,7 @@ function PowerShellJSContainer()
         this.functions = new Map();
         this._registerBuiltins();
         ADCmds.registerADCommands(this);
+        GraphCmds.registerGraphCommands(this);
         if (Array.isArray(options.commands)) options.commands.forEach(command => this.registerCommand(command));
     }
 

@@ -4,13 +4,15 @@ Base repository commit: `97849321560f5e01703fa7690fe0564adfef7ca8`.
 
 ## Dependencies
 
-`index.html` loads these scripts in order:
+`index.html` loads these scripts in order (with the separate Entra Graph modules now included):
 
 ```html
 <script src="res/COM_TERM.js"></script>
 <script src="res/PS_PARSER.js"></script>
 <script src="res/AD_CORE.js"></script>
 <script src="res/PS_AD_COMMANDS.js"></script>
+<script src="res/ENTRA_CORE.js"></script>
+<script src="res/PS_GRAPH_COMMANDS.js"></script>
 <script src="res/PS_CORE.js"></script>
 <script src="res/PS_TERMINAL_ADAPTER.js"></script>
 ```
@@ -48,3 +50,7 @@ The suites contain 50 + 18 + 33 + 14 checks (115 total). The integration suite v
 ## Known limits
 
 LDAP is a browser-side approximation, not an LDAP wire-protocol implementation or a security boundary. `PowerShellAD.SimulatedDirectory` remains a compatibility facade; a future simplification could have PowerShell command modules use the LDAP request/response structure directly. Initial PowerShell fixture data is held inline in `AD_CORE.js`, not fetched from a file.
+
+## Entra ID note (later integration)
+
+The simulated Entra tenant is implemented independently in `ENTRA_CORE.js` and accessed by `PS_GRAPH_COMMANDS.js` through its public Graph API. This does **not** replace or modify the canonical on-prem `AD_CORE.js` LDAP engine; the two fictional directory datasets are distinct. See `docs/PS_GRAPH_COMMANDS.md`.

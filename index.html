@@ -10,9 +10,9 @@
   <header class="top">
     <div>
       <h1>PowerShellJS <span class="mini">v0.2</span></h1>
-      <p class="subtitle">Offline PowerShell subset · AST-based script structure · simulated Active Directory + LDAP search</p>
+      <p class="subtitle">Offline PowerShell subset · AST-based script structure · simulated Active Directory, LDAP and Microsoft Entra Graph</p>
     </div>
-    <span class="tag">LOCAL SANDBOX · NO LDAP SERVER</span>
+    <span class="tag">LOCAL SANDBOX · NO NETWORK</span>
   </header>
   <div class="directory-strip" aria-label="Directory environment">
     <div><strong>Simulated domain</strong><span>corp.example.com</span></div>
@@ -22,7 +22,7 @@
   </div>
   <div class="layout">
     <section class="panel" aria-label="PowerShell terminal">
-      <div class="panelhead"><h2>PowerShell terminal</h2><div class="controls"><span id="status" class="status" aria-live="polite">Ready</span><button id="reset" type="button" title="Reset variables, virtual files, simulated AD objects, and LDAP query log">Reset sandbox</button></div></div>
+      <div class="panelhead"><h2>PowerShell terminal</h2><div class="controls"><span id="status" class="status" aria-live="polite">Ready</span><button id="reset" type="button" title="Reset variables, virtual files, AD and Entra directories, Graph session and LDAP query log">Reset sandbox</button></div></div>
       <div class="terminal-shell"><div id="terminal" aria-label="Interactive PowerShell terminal"></div></div>
       <div class="panel-foot">Try <code>Get-ADUser -Filter *</code> or <code>Get-Command -Name *AD*</code></div>
     </section>
@@ -35,6 +35,7 @@
         <button type="button" data-example="modify">Modify AD</button>
         <button type="button" data-example="logic">If / foreach</button>
         <button type="button" data-example="files">Virtual files</button>
+        <button type="button" data-example="graph">Entra ID / Graph</button>
       </nav>
       <label class="sr-only" for="script">PowerShell script source</label>
       <textarea id="script" class="editor" spellcheck="false" autocomplete="off"># Search a simulated Active Directory
@@ -48,6 +49,7 @@ Get-ADUser -Filter { Enabled -eq $true } -Properties Department |
   <section class="notes">
     <p><strong>Two different pipelines:</strong> <code>-LDAPFilter</code> and <code>Search-LDAP</code> evaluate LDAP expressions in the simulated directory; the PowerShell <code>|</code> operator passes JavaScript objects between cmdlets. Neither opens a real LDAP connection.</p>
     <p><strong>Simulated changes:</strong> <code>Set-ADUser</code>, <code>Enable-ADAccount</code>, <code>Disable-ADAccount</code> and group membership commands modify in-memory data only. Click <strong>Reset sandbox</strong> to restore examples.</p>
+    <p><strong>Entra ID / Graph:</strong> Connect with <code>Connect-MgGraph</code> and query fictional cloud users via <code>Get-MgUser</code>. The Graph connection is simulated; scopes and permissions are not enforced and no Microsoft network requests are made.</p>
     <p><strong>Limits:</strong> This is a deliberately incomplete PowerShell and LDAP implementation. No real AD server, no authentication, AD replication, ACLs, LDAP bind, network, or OS execution. Do not use it to validate production scripts.</p>
   </section>
 </main>
@@ -55,6 +57,8 @@ Get-ADUser -Filter { Enabled -eq $true } -Properties Department |
 <script src="res/PS_PARSER.js"></script>
 <script src="res/AD_CORE.js"></script>
 <script src="res/PS_AD_COMMANDS.js"></script>
+<script src="res/ENTRA_CORE.js"></script>
+<script src="res/PS_GRAPH_COMMANDS.js"></script>
 <script src="res/PS_CORE.js"></script>
 <script src="res/PS_TERMINAL_ADAPTER.js"></script>
 <script>
@@ -62,7 +66,7 @@ Get-ADUser -Filter { Enabled -eq $true } -Properties Department |
  'use strict';
  const registry=new PowerShellTerminal.EngineRegistry();
  registry.register('powershelljs-0.2',()=>new PowerShellJS.PowerShellSimulator());
- const terminal=new TERMINAL({container:'terminal',storageKey:'PowerShellJS_v02_history',welcome:'PowerShellJS v0.2 — simulated Active Directory / LDAP sandbox.\nUse Get-ADRootDSE, Get-ADUser -Filter * or Get-Help Search-LDAP.\n',prompt:'PS C:\\Users\\Demo',separator:'&gt; ',preserveWhitespace:true});
+ const terminal=new TERMINAL({container:'terminal',storageKey:'PowerShellJS_v02_history',welcome:'PowerShellJS — fictional AD + Entra ID sandbox.\nTry Get-ADUser -Filter * or Connect-MgGraph followed by Get-MgUser -All.\n',prompt:'PS C:\\Users\\Demo',separator:'&gt; ',preserveWhitespace:true});
  const status=document.getElementById('status'),editor=document.getElementById('script'),entryCount=document.getElementById('entry-count');
  const adapter=new PowerShellTerminal.TerminalEngineAdapter(terminal,registry.create('powershelljs-0.2'),{onStatus:value=>{status.textContent=value;}});
  const samples={
@@ -71,7 +75,8 @@ Get-ADUser -Filter { Enabled -eq $true } -Properties Department |
   groups:'# Group nesting and AD transitive membership\nGet-ADGroup -Filter "Name -like \'BR_*\'" | Select-Object Name\nGet-ADGroupMember -Identity APP_Reporting -Recursive | Select-Object Name,SamAccountName\nGet-ADPrincipalGroupMembership -Identity mia.jansen | Select-Object Name',
   modify:'# Modify the fictional directory (reset restores original data)\nSet-ADUser -Identity leo.chen -Department Operations\nAdd-ADGroupMember -Identity BR_Operations -Members leo.chen\nGet-ADUser -Identity leo.chen -Properties Department\nGet-ADGroupMember -Identity BR_Operations',
   logic:'# Capture command objects; control flow and functions\n$users = Get-ADUser -Filter "Department -eq \'IT\'" -Properties Department\nfunction ShowUser($u) { Write-Output $u.SamAccountName }\nforeach ($u in $users) {\n  if ($u.Enabled -eq $true) { ShowUser $u }\n}',
-  files:'# Original virtual Windows file system still works\nGet-Location\nGet-ChildItem C:\\Temp\nSet-Content C:\\Temp\\hello.txt -Value "Saved in memory"\nGet-Content C:\\Temp\\hello.txt'
+  files:'# Original virtual Windows file system still works\nGet-Location\nGet-ChildItem C:\\Temp\nSet-Content C:\\Temp\\hello.txt -Value "Saved in memory"\nGet-Content C:\\Temp\\hello.txt',
+  graph:'# Connect to a simulated Entra tenant (no real Microsoft login)\nConnect-MgGraph -Scopes "User.Read.All,Group.Read.All"\nGet-MgUser -Filter "department eq \'IT\'" -Property "id,displayName,department"\nGet-MgGroup -All'
  };
  function refreshStats(){entryCount.textContent=adapter.engine.session.directory.all().length+' objects';}
  document.getElementById('run').addEventListener('click',async()=>{await adapter.submit(editor.value);refreshStats();});

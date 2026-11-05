@@ -42,6 +42,8 @@ This is a **structural illustration**, not a replacement for the full simulator 
 | `PS_PARSER.js` | `PowerShellParserContainer()` | `PowerShellParser.parse()`, `.partition()`, `.preprocess()`, `.SyntaxErrorPS` |
 | `AD_CORE.js` | `PowerShellADContainer()` | `PowerShellAD.SimulatedDirectory`, `.DirectoryError`, `.seed()`, filters |
 | `PS_AD_COMMANDS.js` | `PowerShellADCommandsContainer()` | `PowerShellADCommands.registerADCommands()` |
+| `ENTRA_CORE.js` | `EntraDirectory()` | `new EntraDirectory().Graph()` |
+| `PS_GRAPH_COMMANDS.js` | `PowerShellGraphCommandsContainer()` | `PowerShellGraphCommands.registerGraphCommands()` |
 | `PS_CORE.js` | `PowerShellJSContainer()` | `PowerShellJS.PowerShellSimulator`, `.VirtualFS`, `.Session`, `.PSError`, `.parse()` |
 | `PS_TERMINAL_ADAPTER.js` | `PowerShellTerminalContainer()` | `PowerShellTerminal.EngineRegistry`, `.TerminalEngineAdapter` |
 
@@ -49,18 +51,20 @@ Within containers, private helper functions remain local. Public methods are ass
 
 ## Classic HTML loading
 
-The **existing script order is unchanged**:
+Load the Graph backend and its command provider before the PowerShell execution engine:
 
 ```html
 <script src="res/COM_TERM.js"></script>
 <script src="res/PS_PARSER.js"></script>
 <script src="res/AD_CORE.js"></script>
 <script src="res/PS_AD_COMMANDS.js"></script>
+<script src="res/ENTRA_CORE.js"></script>
+<script src="res/PS_GRAPH_COMMANDS.js"></script>
 <script src="res/PS_CORE.js"></script>
 <script src="res/PS_TERMINAL_ADAPTER.js"></script>
 ```
 
-`PS_AD_COMMANDS.js` uses the `PowerShellAD` compatibility namespace exposed by `AD_CORE.js`. `PS_CORE.js` similarly uses `PowerShellParser`, `PowerShellAD` and `PowerShellADCommands` directly. No JSON fetch, bundler, server, Node module or external resource has been added.
+`PS_AD_COMMANDS.js` uses the `PowerShellAD` compatibility namespace exposed by `AD_CORE.js`. `PS_GRAPH_COMMANDS.js` uses `EntraDirectory.Graph()` for the cloud tenant. `PS_CORE.js` registers both the on-prem AD and Graph command containers. No JSON fetch, bundler, server, Node module or external resource has been added.
 
 ## Error constructor compatibility
 
@@ -73,11 +77,13 @@ The engine is browser-first and does not have `module.exports`. The Node regress
 ```bash
 node res/PS_TESTS.js
 node res/PS_TESTS_v01.js
+node res/PS_GRAPH_TESTS.js
+node res/ENTRA_CORE.test.js
 ```
 
 Expected: **50** v0.2 tests and **18** v0.1 tests. The additional v0.2 tests exercise the constructor layout, module loading in a browser-like context, independent instances, native error behavior, and the terminal adapter.
 
-The original directory implementation has been consolidated into `res/AD_CORE.js`. `PowerShellAD.SimulatedDirectory` now acts as a compatibility view around `ActiveDirectory.LDAP()` rather than holding a separate mutable database. See `docs/AD_CORE_INTEGRATION.md`.
+For Graph integration details see `docs/PS_GRAPH_COMMANDS.md`. The original directory implementation has been consolidated into `res/AD_CORE.js`. `PowerShellAD.SimulatedDirectory` now acts as a compatibility view around `ActiveDirectory.LDAP()` rather than holding a separate mutable database. See `docs/AD_CORE_INTEGRATION.md`.
 
 ## Trade-off
 

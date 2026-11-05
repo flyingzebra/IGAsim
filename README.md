@@ -1,16 +1,16 @@
-# PowerShellJS v0.2 — Offline PowerShell + Simulated AD
+# PowerShellJS v0.2 — Offline PowerShell, Active Directory and Entra ID
 
-A **static, browser-only** PowerShell *subset* simulator with a separate parser, runtime, simulated Windows filesystem, and simulated Active Directory / LDAP provider. It is **not** Microsoft PowerShell, a real AD controller, an LDAP client, or a production script validation tool. No Node.js, server, installation, or internet access is needed to use the application.
+A **static, browser-only** PowerShell *subset* simulator with a separate parser, runtime, simulated Windows filesystem, and simulated Active Directory / LDAP provider and a Microsoft Entra ID / Graph provider. It is **not** Microsoft PowerShell, a real AD controller, an LDAP client, or a production script validation tool. No Node.js, server, installation, or internet access is needed to use the application.
 
 ## Quick start
 
 1. Open **`index.html`** in Chrome/Edge/Firefox/Safari. The standalone LDAP console remains available at `tools/ActiveDirectory-demo.html`.
-2. Use the example buttons (AD users, LDAP filter, Group membership, Modify AD, If / foreach, Virtual files).
+2. Use the example buttons (AD users, LDAP filter, Group membership, Modify AD, If / foreach, Virtual files, Entra ID / Graph).
 3. Click **Run script** or press Ctrl/Cmd+Enter. You can also type single commands into `COM_TERM`.
 4. Click **Inspect AST** to see the parsed control-flow structure before execution.
-5. **Reset sandbox** reinitializes variables, virtual files, directory users, groups, memberships and the query log. Terminal command history in `localStorage` is separate.
+5. **Reset sandbox** reinitializes variables, virtual files, on-premises directory objects, cloud tenant objects, simulated Graph connection and LDAP query log. Terminal command history in `localStorage` is separate.
 
-Run the engine tests from the repository root (Node is used **only** for tests): `node res/PS_TESTS.js`, `node res/PS_TESTS_v01.js`, `node res/ActiveDirectory.test.js`, and `node res/AD_INTEGRATION_SMOKE.js`.
+Run the engine tests from the repository root (Node is used **only** for tests): `node res/PS_TESTS.js`, `node res/PS_TESTS_v01.js`, `node res/ActiveDirectory.test.js`, and `node res/AD_INTEGRATION_SMOKE.js`, `node res/ENTRA_CORE.test.js`, and `node res/PS_GRAPH_TESTS.js`.
 
 ## Architecture
 
@@ -23,11 +23,10 @@ PS_TERMINAL_ADAPTER.js                [host adapter + interchangeable engine reg
          |
 PS_CORE.js                            [PowerShell session + execution engine]
   +-- PS_PARSER.js                    [structural lexer/parser and script AST]
-  +-- PS_AD_COMMANDS.js               [ActiveDirectory-style cmdlets and Search-LDAP]
-         |
-     AD_CORE.js                       [single ActiveDirectory.LDAP() engine + PowerShell adapter]
-         |
-     Synthetic seed data             [corp.example.com; 7 users, nested groups, OUs, computers]
+  +-- PS_AD_COMMANDS.js               [on-premises AD cmdlets + Search-LDAP]
+  |      └── AD_CORE.js               [ActiveDirectory.LDAP() + corp.example.com fixture]
+  +-- PS_GRAPH_COMMANDS.js            [Graph PowerShell cmdlets + Invoke-MgGraphRequest]
+         └── ENTRA_CORE.js           [EntraDirectory.Graph() + northwind.example fixture]
 ```
 
 To embed the interpreter without a terminal:
@@ -36,6 +35,8 @@ To embed the interpreter without a terminal:
 <script src="PS_PARSER.js"></script>
 <script src="AD_CORE.js"></script>
 <script src="PS_AD_COMMANDS.js"></script>
+<script src="ENTRA_CORE.js"></script>
+<script src="PS_GRAPH_COMMANDS.js"></script>
 <script src="PS_CORE.js"></script>
 <script>
 const ps = new PowerShellJS.PowerShellSimulator();
@@ -44,12 +45,14 @@ ps.execute('Get-ADUser -Filter * -Properties Department')
 </script>
 ```
 
-Custom fictional directory fixtures are supported programmatically with `new PowerShellJS.PowerShellSimulator({directoryEntries: yourEntries})`. Each entry needs a `distinguishedName` and suitable AD-like attributes, including `objectClass`/`objectCategory`; reset restores a cloned fixture. Only use sanitized data, not production directory exports containing personal or confidential information.
+Custom fictional on-prem AD and cloud tenant fixtures are supported programmatically with `new PowerShellJS.PowerShellSimulator({directoryEntries: yourEntries, entraSeed: yourEntraDB})`. Each entry needs a `distinguishedName` and suitable AD-like attributes, including `objectClass`/`objectCategory`; reset restores a cloned fixture. Only use sanitized data, not production directory exports containing personal or confidential information.
 
 The terminal adapter continues to accept any engine implementing `execute(source)` (returns `{success, output, errors, effects, cwd, objects}`), `getPrompt()` and `reset()`. The supplied `COM_TERM` sources are copied **byte-for-byte**, not modified.
 
 The main application and the standalone LDAP console both load `res/AD_CORE.js`.
 Each page creates its **own in-memory instance**: the PowerShell simulator retains its `corp.example.com` users/groups/computers, while the LDAP demo retains `contoso.local`. `PS_AD.js` is no longer included or needed. See [AD_CORE integration](docs/AD_CORE_INTEGRATION.md).
+
+**Cloud integration:** `index.html` now also loads `ENTRA_CORE.js` and `PS_GRAPH_COMMANDS.js`. The PowerShell simulator has an independent fictional `northwind.example` tenant with users, groups and applications. `Connect-MgGraph` simulates a connection (no login or scope enforcement), `Get-MgUser`/`Get-MgGroup` query it, and `Invoke-MgGraphRequest` exposes raw Graph-style operations. [Graph PowerShell command guide](docs/PS_GRAPH_COMMANDS.md) and [Graph core API](docs/README-ENTRA_CORE.md).
 
 ## Core v0.2 functionality
 
@@ -59,9 +62,20 @@ Each page creates its **own in-memory instance**: the PowerShell simulator retai
 
 **Directory filters:** `-Filter` supports a subset of the AD expression language (`-eq`, `-ne`, `-like`, `-notlike`, `-gt`, `-ge`, `-lt`, `-le`, `-and`, `-or`, `-not`, parentheses); `-LDAPFilter` supports a subset of RFC 4515 LDAP filter grammar (`&`, `|`, `!`, attribute equality, presence, substrings, `>=`, `<=`, `~=`, escaped hex characters, and AD bitwise/transitive matching OIDs). `-SearchBase` and `-SearchScope Base|OneLevel|Subtree` apply to the simulated DN hierarchy. `-Properties` controls projection for `Get-AD*` searches.
 
+**Graph cmdlets:** `Connect-MgGraph`, `Disconnect-MgGraph`, `Get-MgContext`, `Get-MgUser`, `Get-MgGroup`, member queries, application/service-principal/device/role reads, supported new/update/remove operations, and `Invoke-MgGraphRequest`. Graph `-Filter` uses OData (`department eq 'IT'`), not LDAP. `-All` follows Graph pages. See [Graph command details](docs/PS_GRAPH_COMMANDS.md).
+
 **PowerShell pipeline vs. LDAP query:** These are different layers. The `-LDAPFilter` string is evaluated *inside* the virtual directory; `|` passes **objects** from one PowerShell cmdlet to another. `Search-LDAP` is simulated **in memory**; it does not perform any LDAP network bind. A future real-AD connector would require a separately designed authenticated service/proxy, not direct browser LDAP socket access.
 
 ## Example scripts
+
+```powershell
+# Cloud tenant (simulation only; no actual Microsoft authentication)
+Connect-MgGraph -Scopes "User.Read.All,Group.Read.All"
+Get-MgUser -Filter "department eq 'IT'" -Property "id,displayName,department"
+Get-MgGroup -All
+Invoke-MgGraphRequest -Method GET -Uri '/v1.0/users?$top=1'
+```
+
 
 ```powershell
 # Directory query via AD filter expression
@@ -97,6 +111,9 @@ Get-LDAPQueryLog
 - A script that works here may behave differently on Windows PowerShell 5.1 or PowerShell 7. Do not assume production correctness.
 
 ## Testing
+
+- `node res/PS_GRAPH_TESTS.js`: cloud PowerShell cmdlet and integration tests.
+- `node res/ENTRA_CORE.test.js`: standalone Graph core tests.
 
 - `node res/PS_TESTS.js`: 50 regression tests covering parser, control flow, virtual filesystem, AD queries, LDAP filters, bitwise and transitive matching, group mutations, reset and error handling.
 - `node res/PS_TESTS_v01.js`: original 18 v0.1 compatibility tests.
