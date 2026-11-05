@@ -1,23 +1,16 @@
 /* PowerShellJS v0.2 — structural parser. PowerShell subset, not PowerShell's formal grammar.
    No eval, external dependencies, DOM or native bindings. */
-(function(root, factory)
-{
-    const api = factory();
-    if (typeof module === 'object' && module.exports) module.exports = api;
-    if (root) root.PowerShellParser = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function()
+function PowerShellParserContainer()
 {
     'use strict';
-    class SyntaxErrorPS extends Error
+    function SyntaxErrorPS(message, line = 1, column = 1)
     {
-        constructor(message, line = 1, column = 1)
-        {
-            super(message);
-            this.name = 'SyntaxErrorPS';
-            this.code = 'ParserError';
-            this.line = line;
-            this.column = column;
-        }
+        const error = new Error(message);
+        error.name = 'SyntaxErrorPS';
+        error.code = 'ParserError';
+        error.line = line;
+        error.column = column;
+        return error;
     }
     const lineAt = (s, i) => 1 + (s.slice(0, i).match(/\n/g) || []).length;
     function preprocess(src)
@@ -208,5 +201,13 @@
         if (src.length > 100000) throw new SyntaxErrorPS('Source too long.');
         return partition(preprocess(src), ['\n',';']).map(({ text, line }) => statement(text, line));
     }
-    return { parse, partition, preprocess, SyntaxErrorPS, readGroup, VERSION: '0.2.0' };
-});
+
+    this.parse = parse;
+    this.partition = partition;
+    this.preprocess = preprocess;
+    this.SyntaxErrorPS = SyntaxErrorPS;
+    this.readGroup = readGroup;
+    this.VERSION = '0.2.0';
+}
+
+var PowerShellParser = new PowerShellParserContainer();

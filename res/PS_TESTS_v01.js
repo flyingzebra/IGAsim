@@ -1,7 +1,15 @@
 /* Run with: node PS_TESTS.js — no packages, no server, no network. */
 'use strict';
 const assert = require('node:assert/strict');
-const { PowerShellSimulator, parse, VirtualFS } = require('./PS_CORE.js');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+for (const filename of ['PS_PARSER.js','PS_AD.js','PS_AD_COMMANDS.js','PS_CORE.js'])
+{
+    const filepath = path.join(__dirname, filename);
+    vm.runInThisContext(fs.readFileSync(filepath, 'utf8'), { filename: filepath });
+}
+const { PowerShellSimulator, parse, VirtualFS } = globalThis.PowerShellJS;
 let passes = 0;
 async function test(label, fn)
 {
@@ -20,7 +28,7 @@ async function run(source)
     if (!response.success) throw new Error(response.errors.join('\n'));
     return response;
 }
-(async () =>
+async function runTests()
 {
     await test('Parser recognizes assignment, pipelines and comments', () =>
     {
@@ -113,4 +121,6 @@ async function run(source)
         assert.deepEqual((await run('ht')).output, ['works']);
     });
     if (!process.exitCode) console.log(`\n${passes} tests passed. PowerShellJS v0.1`);
-})();
+}
+
+runTests();

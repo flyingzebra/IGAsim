@@ -1,21 +1,14 @@
 /* PowerShellJS v0.2 — simulated AD directory + filter interpreters.
  * In-memory only. No LDAP sockets, network or system authentication. */
-(function(root, factory)
-{
-    const api = factory();
-    if (typeof module === 'object' && module.exports) module.exports = api;
-    if (root) root.PowerShellAD = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function()
+function PowerShellADContainer()
 {
     'use strict';
-    class DirectoryError extends Error
+    function DirectoryError(message, code = 'ADSimulationError')
     {
-        constructor(message, code = 'ADSimulationError')
-        {
-            super(message);
-            this.name = 'DirectoryError';
-            this.code = code;
-        }
+        const error = new Error(message);
+        error.name = 'DirectoryError';
+        error.code = code;
+        return error;
     }
     const lc = v => String(v ?? '').toLowerCase(), list = v => Array.isArray(v) ? v : v === undefined || v === null ? [] : [v];
     function attr(obj, key)
@@ -194,33 +187,37 @@
     }
     const ROOT = 'DC=corp,DC=example,DC=com';
     function dn(name, parent) { return name + ',' + parent; }
-    class SimulatedDirectory
+    function SimulatedDirectory(data)
     {
-        constructor(data) { this.reset(data); }
-        reset(data)
+        this.reset = function(data)
         {
             this.entries = new Map();
             this.queryLog = [];
             this.root = ROOT;
             for (const entry of (data || seed())) this.add(JSON.parse(JSON.stringify(entry)));
-        }
-        add(entry)
+        };
+
+        this.add = function(entry)
         {
             const e = { ...entry }; if (!e.distinguishedName) throw new DirectoryError('distinguishedName is required.', 'InvalidDirectoryEntry');
             const k = lc(e.distinguishedName); if (this.entries.has(k)) throw new DirectoryError('Directory entry already exists: ' + e.distinguishedName, 'ItemExists');
             if (!e.objectClass) e.objectClass = ['top']; if (!e.name) e.name = e.cn || e.ou || e.sAMAccountName || '';
             this.entries.set(k, e); return e;
-        }
-        all() { return [...this.entries.values()]; }
-        byDN(dn) { return this.entries.get(lc(dn)); }
-        get(identity, kind)
+        };
+
+        this.all = function() { return [...this.entries.values()]; };
+
+        this.byDN = function(dn) { return this.entries.get(lc(dn)); };
+
+        this.get = function(identity, kind)
         {
             const s = lc(identity); const list = this.all().filter(e => !kind || this.isKind(e, kind));
             const hit = list.filter(e => [e.distinguishedName, e.sAMAccountName, e.name, e.cn, e.objectGUID].some(x => x !== undefined && lc(x) === s));
             if (!hit.length) throw new DirectoryError(`Cannot find directory ${kind || 'object'}: ${identity}`, 'ADIdentityNotFound');
             if (hit.length > 1) throw new DirectoryError(`Ambiguous directory identity: ${identity}`, 'ADIdentityAmbiguous'); return hit[0];
-        }
-        isKind(e, k)
+        };
+
+        this.isKind = function(e, k)
         {
             if (k === 'object') return true;
             if (k === 'user') return lc(e.objectCategory) === 'person' && list(e.objectClass).some(x => lc(x) === 'user') && !list(e.objectClass).some(x => lc(x) === 'computer');
@@ -228,20 +225,23 @@
             if (k === 'computer') return lc(e.objectCategory) === 'computer';
             if (k === 'organizationalunit') return list(e.objectClass).some(x => lc(x) === 'organizationalunit');
             return false;
-        }
-        parentDN(x)
+        };
+
+        this.parentDN = function(x)
         {
             const str = String(x), comma = str.search(/(?<!\\),/);
             return comma < 0 ? '' : str.slice(comma + 1);
-        }
-        inScope(e, base, scope)
+        };
+
+        this.inScope = function(e, base, scope)
         {
             const target = lc(e.distinguishedName), b = lc(base); const mode = lc(scope);
             if (mode === 'base' || mode === '0') return target === b;
             if (mode === 'onelevel' || mode === '1') return lc(this.parentDN(e.distinguishedName)) === b;
             return target === b || target.endsWith(',' + b);
-        }
-        search({ kind = 'object', identity, ldapFilter, filter, searchBase = ROOT, searchScope = 'Subtree', variables = {} } = {})
+        };
+
+        this.search = function({ kind = 'object', identity, ldapFilter, filter, searchBase = ROOT, searchScope = 'Subtree', variables = {} } = {})
         {
             if (identity !== undefined && identity !== null) return [this.get(identity, kind)];
             if (ldapFilter !== undefined && filter !== undefined) throw new DirectoryError('Use either -Filter or -LDAPFilter, not both.', 'ParameterSetConflict');
@@ -256,8 +256,9 @@
             const results = this.all().filter(e => this.isKind(e, kind) && this.inScope(e, base, searchScope) && check(e));
             this.queryLog.push({ BaseDN: base, Scope: searchScope, Kind: kind, FilterType: ldapFilter !== undefined ? 'LDAP' : filter !== undefined ? 'AD' : 'All', Filter: ldapFilter ?? filter ?? '*', ResultCount: results.length });
             if (this.queryLog.length > 100) this.queryLog.shift(); return results;
-        }
-        members(group, recursive = false, seen = new Set())
+        };
+
+        this.members = function(group, recursive = false, seen = new Set())
         {
             const g = typeof group === 'string' ? this.get(group, 'group') : group;
             if (seen.has(lc(g.distinguishedName))) return [];
@@ -268,13 +269,15 @@
                 if (recursive && this.isKind(member, 'group')) out.push(...this.members(member, true, seen)); else out.push(member);
             }
             return [...new Map(out.map(x => [lc(x.distinguishedName), x])).values()];
-        }
-        transitiveMembers(groupDN)
+        };
+
+        this.transitiveMembers = function(groupDN)
         {
             const g = this.byDN(groupDN);
             return g && this.isKind(g, 'group') ? this.members(g, true) : [];
-        }
-        groupsOf(identity, recursive = false)
+        };
+
+        this.groupsOf = function(identity, recursive = false)
         {
             const e = typeof identity === 'string' ? this.get(identity) : identity; let direct = this.all().filter(g => this.isKind(g, 'group') && list(g.member).some(m => lc(m) === lc(e.distinguishedName)));
             if (!recursive) return direct;
@@ -289,9 +292,14 @@
                 }
             }
             return [...all.values()];
-        }
-        transitiveGroups(dn) { const e = this.byDN(dn); return e ? this.groupsOf(e, true) : []; }
-        snapshot() { return this.all().map(e => JSON.parse(JSON.stringify(e))); }
+        };
+
+        this.transitiveGroups = function(dn)
+        { const e = this.byDN(dn); return e ? this.groupsOf(e, true) : [];
+        };
+
+        this.snapshot = function() { return this.all().map(e => JSON.parse(JSON.stringify(e))); };
+        this.reset(data);
     }
     function seed()
     {
@@ -345,5 +353,16 @@
         }
         return arr;
     }
-    return { SimulatedDirectory, DirectoryError, parseLDAPFilter, matchingLDAP, parseADFilter, ROOT, seed, attr, VERSION: '0.2.0' };
-});
+
+    this.SimulatedDirectory = SimulatedDirectory;
+    this.DirectoryError = DirectoryError;
+    this.parseLDAPFilter = parseLDAPFilter;
+    this.matchingLDAP = matchingLDAP;
+    this.parseADFilter = parseADFilter;
+    this.ROOT = ROOT;
+    this.seed = seed;
+    this.attr = attr;
+    this.VERSION = '0.2.0';
+}
+
+var PowerShellAD = new PowerShellADContainer();

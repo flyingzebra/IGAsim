@@ -1,0 +1,996 @@
+diff --git a/docs/PS_CONSTRUCTOR_ARCHITECTURE.md b/docs/PS_CONSTRUCTOR_ARCHITECTURE.md
+new file mode 100644
+index 0000000..98605fb
+--- /dev/null
++++ b/docs/PS_CONSTRUCTOR_ARCHITECTURE.md
+@@ -0,0 +1,84 @@
++# PowerShellJS — Constructor-container architecture
++
++**Baseline:** IGAsim `62478c3b1e030c203aaf0f559a0f9e77dce5ae77`
++**Convention:** [`docs/CODING_CONVENTIONS.md`](CODING_CONVENTIONS.md)
++**Scope:** `res/PS_*.js` browser modules and the Node-only regression tests.
++
++## Design
++
++The PowerShell engine uses classic browser scripts and **named constructor functions** instead of `class`, IIFEs, UMD/factory wrappers, prototype methods or CommonJS exports. Each module publishes exactly one namespace object through a top-level `var`, so the existing public interface remains stable.
++
++```javascript
++function PowerShellJSContainer()
++{
++    function PowerShellSimulator(options = {})
++    {
++        this.execute = async function(source)
++        {
++            // Existing execution logic.
++        };
++
++        this.reset = function() { this.session.reset(); this.functions.clear(); };
++
++        // Constructor initialization happens AFTER the instance methods are assigned.
++        this.session = new Session(options);
++    }
++
++    this.PowerShellSimulator = PowerShellSimulator;
++}
++
++var PowerShellJS = new PowerShellJSContainer();
++
++var ps = new PowerShellJS.PowerShellSimulator();
++ps.execute('Get-ADUser -Filter *').then(console.log);
++```
++
++This is a **structural illustration**, not a replacement for the full simulator constructor. In the implementation, `this._registerBuiltins` is similarly assigned before it is called.
++
++## Module mapping
++
++| File | Top-level container | Public interface kept |
++|---|---|---|
++| `PS_PARSER.js` | `PowerShellParserContainer()` | `PowerShellParser.parse()`, `.partition()`, `.preprocess()`, `.SyntaxErrorPS` |
++| `PS_AD.js` | `PowerShellADContainer()` | `PowerShellAD.SimulatedDirectory`, `.DirectoryError`, `.seed()`, filters |
++| `PS_AD_COMMANDS.js` | `PowerShellADCommandsContainer()` | `PowerShellADCommands.registerADCommands()` |
++| `PS_CORE.js` | `PowerShellJSContainer()` | `PowerShellJS.PowerShellSimulator`, `.VirtualFS`, `.Session`, `.PSError`, `.parse()` |
++| `PS_TERMINAL_ADAPTER.js` | `PowerShellTerminalContainer()` | `PowerShellTerminal.EngineRegistry`, `.TerminalEngineAdapter` |
++
++Within containers, private helper functions remain local. Public methods are assigned directly to each instance as `this.method = function(...)`, including asynchronous methods with `async function(...)`. There are no prototype-method assignments.
++
++## Classic HTML loading
++
++The **existing script order is unchanged**:
++
++```html
++<script src="res/COM_TERM.js"></script>
++<script src="res/PS_PARSER.js"></script>
++<script src="res/PS_AD.js"></script>
++<script src="res/PS_AD_COMMANDS.js"></script>
++<script src="res/PS_CORE.js"></script>
++<script src="res/PS_TERMINAL_ADAPTER.js"></script>
++```
++
++`PS_AD_COMMANDS.js` uses the already loaded `PowerShellAD` namespace. `PS_CORE.js` similarly uses `PowerShellParser`, `PowerShellAD` and `PowerShellADCommands` directly. No JSON fetch, bundler, server, Node module or external resource has been added.
++
++## Error constructor compatibility
++
++`PSError`, `DirectoryError` and `SyntaxErrorPS` are now plain functions that **return a native `Error` instance** carrying the original `.name`, `.message`, `.stack`, `.code` and, when relevant, `.line`/`.column` properties. This retains ordinary `instanceof Error` behavior without `extends Error` or prototype chains. One distinction: `error instanceof PSError` is no longer true (likewise for the other two custom error constructors). The current engine uses error properties rather than that test.
++
++## Node-only regression tests
++
++The engine is browser-first and does not have `module.exports`. The Node regression tests now load the same classic scripts using `node:vm`; they do not require the engine files as CommonJS modules.
++
++```bash
++node res/PS_TESTS.js
++node res/PS_TESTS_v01.js
++```
++
++Expected: **50** v0.2 tests and **18** v0.1 tests. The additional v0.2 tests exercise the constructor layout, module loading in a browser-like context, independent instances, native error behavior, and the terminal adapter.
++
++The legacy `PS_AD.js` simulated directory remains separate from `res/ActiveDirectory.js` and its `LDAP()` method. Consolidating those directories is a future integration task, **not part of this syntax-and-container refactor**.
++
++## Trade-off
++
++A direct `this.method = function(...)` declaration allocates a method for each instance rather than sharing it through the prototype. This is intentional, matching the IGAsim coding convention. The simulator uses small, in-memory objects; if scale becomes material, benchmark before changing the convention.
+diff --git a/res/PS_AD.js b/res/PS_AD.js
+index 5c174ba..c60b36d 100644
+--- a/res/PS_AD.js
++++ b/res/PS_AD.js
+@@ -1,21 +1,14 @@
+ /* PowerShellJS v0.2 — simulated AD directory + filter interpreters.
+  * In-memory only. No LDAP sockets, network or system authentication. */
+-(function(root, factory)
+-{
+-    const api = factory();
+-    if (typeof module === 'object' && module.exports) module.exports = api;
+-    if (root) root.PowerShellAD = api;
+-})(typeof globalThis !== 'undefined' ? globalThis : this, function()
++function PowerShellADContainer()
+ {
+     'use strict';
+-    class DirectoryError extends Error
++    function DirectoryError(message, code = 'ADSimulationError')
+     {
+-        constructor(message, code = 'ADSimulationError')
+-        {
+-            super(message);
+-            this.name = 'DirectoryError';
+-            this.code = code;
+-        }
++        const error = new Error(message);
++        error.name = 'DirectoryError';
++        error.code = code;
++        return error;
+     }
+     const lc = v => String(v ?? '').toLowerCase(), list = v => Array.isArray(v) ? v : v === undefined || v === null ? [] : [v];
+     function attr(obj, key)
+@@ -194,33 +187,37 @@
+     }
+     const ROOT = 'DC=corp,DC=example,DC=com';
+     function dn(name, parent) { return name + ',' + parent; }
+-    class SimulatedDirectory
++    function SimulatedDirectory(data)
+     {
+-        constructor(data) { this.reset(data); }
+-        reset(data)
++        this.reset = function(data)
+         {
+             this.entries = new Map();
+             this.queryLog = [];
+             this.root = ROOT;
+             for (const entry of (data || seed())) this.add(JSON.parse(JSON.stringify(entry)));
+-        }
+-        add(entry)
++        };
++
++        this.add = function(entry)
+         {
+             const e = { ...entry }; if (!e.distinguishedName) throw new DirectoryError('distinguishedName is required.', 'InvalidDirectoryEntry');
+             const k = lc(e.distinguishedName); if (this.entries.has(k)) throw new DirectoryError('Directory entry already exists: ' + e.distinguishedName, 'ItemExists');
+             if (!e.objectClass) e.objectClass = ['top']; if (!e.name) e.name = e.cn || e.ou || e.sAMAccountName || '';
+             this.entries.set(k, e); return e;
+-        }
+-        all() { return [...this.entries.values()]; }
+-        byDN(dn) { return this.entries.get(lc(dn)); }
+-        get(identity, kind)
++        };
++
++        this.all = function() { return [...this.entries.values()]; };
++
++        this.byDN = function(dn) { return this.entries.get(lc(dn)); };
++
++        this.get = function(identity, kind)
+         {
+             const s = lc(identity); const list = this.all().filter(e => !kind || this.isKind(e, kind));
+             const hit = list.filter(e => [e.distinguishedName, e.sAMAccountName, e.name, e.cn, e.objectGUID].some(x => x !== undefined && lc(x) === s));
+             if (!hit.length) throw new DirectoryError(`Cannot find directory ${kind || 'object'}: ${identity}`, 'ADIdentityNotFound');
+             if (hit.length > 1) throw new DirectoryError(`Ambiguous directory identity: ${identity}`, 'ADIdentityAmbiguous'); return hit[0];
+-        }
+-        isKind(e, k)
++        };
++
++        this.isKind = function(e, k)
+         {
+             if (k === 'object') return true;
+             if (k === 'user') return lc(e.objectCategory) === 'person' && list(e.objectClass).some(x => lc(x) === 'user') && !list(e.objectClass).some(x => lc(x) === 'computer');
+@@ -228,20 +225,23 @@
+             if (k === 'computer') return lc(e.objectCategory) === 'computer';
+             if (k === 'organizationalunit') return list(e.objectClass).some(x => lc(x) === 'organizationalunit');
+             return false;
+-        }
+-        parentDN(x)
++        };
++
++        this.parentDN = function(x)
+         {
+             const str = String(x), comma = str.search(/(?<!\\),/);
+             return comma < 0 ? '' : str.slice(comma + 1);
+-        }
+-        inScope(e, base, scope)
++        };
++
++        this.inScope = function(e, base, scope)
+         {
+             const target = lc(e.distinguishedName), b = lc(base); const mode = lc(scope);
+             if (mode === 'base' || mode === '0') return target === b;
+             if (mode === 'onelevel' || mode === '1') return lc(this.parentDN(e.distinguishedName)) === b;
+             return target === b || target.endsWith(',' + b);
+-        }
+-        search({ kind = 'object', identity, ldapFilter, filter, searchBase = ROOT, searchScope = 'Subtree', variables = {} } = {})
++        };
++
++        this.search = function({ kind = 'object', identity, ldapFilter, filter, searchBase = ROOT, searchScope = 'Subtree', variables = {} } = {})
+         {
+             if (identity !== undefined && identity !== null) return [this.get(identity, kind)];
+             if (ldapFilter !== undefined && filter !== undefined) throw new DirectoryError('Use either -Filter or -LDAPFilter, not both.', 'ParameterSetConflict');
+@@ -256,8 +256,9 @@
+             const results = this.all().filter(e => this.isKind(e, kind) && this.inScope(e, base, searchScope) && check(e));
+             this.queryLog.push({ BaseDN: base, Scope: searchScope, Kind: kind, FilterType: ldapFilter !== undefined ? 'LDAP' : filter !== undefined ? 'AD' : 'All', Filter: ldapFilter ?? filter ?? '*', ResultCount: results.length });
+             if (this.queryLog.length > 100) this.queryLog.shift(); return results;
+-        }
+-        members(group, recursive = false, seen = new Set())
++        };
++
++        this.members = function(group, recursive = false, seen = new Set())
+         {
+             const g = typeof group === 'string' ? this.get(group, 'group') : group;
+             if (seen.has(lc(g.distinguishedName))) return [];
+@@ -268,13 +269,15 @@
+                 if (recursive && this.isKind(member, 'group')) out.push(...this.members(member, true, seen)); else out.push(member);
+             }
+             return [...new Map(out.map(x => [lc(x.distinguishedName), x])).values()];
+-        }
+-        transitiveMembers(groupDN)
++        };
++
++        this.transitiveMembers = function(groupDN)
+         {
+             const g = this.byDN(groupDN);
+             return g && this.isKind(g, 'group') ? this.members(g, true) : [];
+-        }
+-        groupsOf(identity, recursive = false)
++        };
++
++        this.groupsOf = function(identity, recursive = false)
+         {
+             const e = typeof identity === 'string' ? this.get(identity) : identity; let direct = this.all().filter(g => this.isKind(g, 'group') && list(g.member).some(m => lc(m) === lc(e.distinguishedName)));
+             if (!recursive) return direct;
+@@ -289,9 +292,14 @@
+                 }
+             }
+             return [...all.values()];
+-        }
+-        transitiveGroups(dn) { const e = this.byDN(dn); return e ? this.groupsOf(e, true) : []; }
+-        snapshot() { return this.all().map(e => JSON.parse(JSON.stringify(e))); }
++        };
++
++        this.transitiveGroups = function(dn)
++        { const e = this.byDN(dn); return e ? this.groupsOf(e, true) : [];
++        };
++
++        this.snapshot = function() { return this.all().map(e => JSON.parse(JSON.stringify(e))); };
++        this.reset(data);
+     }
+     function seed()
+     {
+@@ -345,5 +353,16 @@
+         }
+         return arr;
+     }
+-    return { SimulatedDirectory, DirectoryError, parseLDAPFilter, matchingLDAP, parseADFilter, ROOT, seed, attr, VERSION: '0.2.0' };
+-});
++
++    this.SimulatedDirectory = SimulatedDirectory;
++    this.DirectoryError = DirectoryError;
++    this.parseLDAPFilter = parseLDAPFilter;
++    this.matchingLDAP = matchingLDAP;
++    this.parseADFilter = parseADFilter;
++    this.ROOT = ROOT;
++    this.seed = seed;
++    this.attr = attr;
++    this.VERSION = '0.2.0';
++}
++
++var PowerShellAD = new PowerShellADContainer();
+diff --git a/res/PS_AD_COMMANDS.js b/res/PS_AD_COMMANDS.js
+index e7c8d8a..e382f0b 100644
+--- a/res/PS_AD_COMMANDS.js
++++ b/res/PS_AD_COMMANDS.js
+@@ -1,12 +1,8 @@
+ /* ActiveDirectory-style cmdlets operating on the in-memory directory provider. */
+-(function(root, factory)
+-{
+-    const api = factory(root && root.PowerShellAD || (typeof require === 'function' ? require('./PS_AD.js') : null));
+-    if (typeof module === 'object' && module.exports) module.exports = api;
+-    if (root) root.PowerShellADCommands = api;
+-})(typeof globalThis !== 'undefined' ? globalThis : this, function(AD)
++function PowerShellADCommandsContainer()
+ {
+     'use strict';
++    const AD = typeof PowerShellAD !== 'undefined' ? PowerShellAD : null;
+     if (!AD) throw new Error('Load PS_AD.js before PS_AD_COMMANDS.js.');
+     const { DirectoryError, attr } = AD;
+     const str = v => String(v ?? ''), lc = v => str(v).toLowerCase();
+@@ -141,5 +137,9 @@
+             return { values: args.has('passthru') ? [project(group, 'group', 'member', session.directory)] : [], messages: [], effects: [] };
+         });
+     }
+-    return { registerADCommands, VERSION: '0.2.0' };
+-});
++
++    this.registerADCommands = registerADCommands;
++    this.VERSION = '0.2.0';
++}
++
++var PowerShellADCommands = new PowerShellADCommandsContainer();
+diff --git a/res/PS_CORE.js b/res/PS_CORE.js
+index c64d0fc..e0f5206 100644
+--- a/res/PS_CORE.js
++++ b/res/PS_CORE.js
+@@ -1,25 +1,16 @@
+ /* PowerShellJS v0.2 — browser-first, dependency-free, deliberately limited PowerShell simulator.
+  * No eval(), OS shell, host filesystem, remote requests or PowerShell subprocess.
+- * CommonJS export is provided only for offline regression tests; no Node dependency.
++ * Browser-first plain constructor containers; no CommonJS export.
+  */
+-(function(root, factory)
+-{
+-    'use strict';
+-    var exports = factory();
+-    if (typeof module === 'object' && module.exports) module.exports = exports;
+-    if (root) root.PowerShellJS = exports;
+-})(typeof globalThis !== 'undefined' ? globalThis : this, function()
++function PowerShellJSContainer()
+ {
+     'use strict';
+     const VERSION = '0.2.0';
+     // Core is deliberately UI-independent. Browser globals are assigned by script tags;
+-    // require() is used only in Node regression tests.
+-    const ParserV2 = (typeof globalThis !== 'undefined' && globalThis.PowerShellParser) ||
+-        (typeof require === 'function' ? require('./PS_PARSER.js') : null);
+-    const AD = (typeof globalThis !== 'undefined' && globalThis.PowerShellAD) ||
+-        (typeof require === 'function' ? require('./PS_AD.js') : null);
+-    const ADCmds = (typeof globalThis !== 'undefined' && globalThis.PowerShellADCommands) ||
+-        (typeof require === 'function' ? require('./PS_AD_COMMANDS.js') : null);
++    // Node regression tests load these browser scripts through vm.
++    const ParserV2 = typeof PowerShellParser !== 'undefined' ? PowerShellParser : null;
++    const AD = typeof PowerShellAD !== 'undefined' ? PowerShellAD : null;
++    const ADCmds = typeof PowerShellADCommands !== 'undefined' ? PowerShellADCommands : null;
+     if (!ParserV2 || !AD || !ADCmds) throw new Error('Load PS_PARSER.js, PS_AD.js and PS_AD_COMMANDS.js before PS_CORE.js.');
+ 
+     const MAX_SOURCE_LENGTH = 100000;
+@@ -28,14 +19,12 @@
+     const MAX_OUTPUT_CHARS = 500000;
+     const lower = value => String(value).toLowerCase();
+ 
+-    class PSError extends Error
++    function PSError(message, code = 'PSSimulationError')
+     {
+-        constructor(message, code = 'PSSimulationError')
+-        {
+-            super(message);
+-            this.name = 'PSError';
+-            this.code = code;
+-        }
++        const error = new Error(message);
++        error.name = 'PSError';
++        error.code = code;
++        return error;
+     }
+ 
+     function isEscaped(src, pos)
+@@ -238,10 +227,9 @@
+ 
+     function parse(source) { return ParserV2.parse(source); }
+ 
+-    class VirtualFS
++    function VirtualFS()
+     {
+-        constructor() { this.reset(); }
+-        reset()
++        this.reset = function()
+         {
+             this.items = new Map();
+             this.cwd = 'C:\\Users\\Demo';
+@@ -249,8 +237,9 @@
+             this.write('C:\\Users\\Demo\\README.txt', 'PowerShellJS v0.2\nThis is a simulated filesystem.\n');
+             this.write('C:\\Temp\\example.txt', 'Hello from your browser-only PowerShell!\n');
+             this.write('C:\\Windows\\version.txt', 'Simulated Windows Environment v0.1\n');
+-        }
+-        normalize(path)
++        };
++
++        this.normalize = function(path)
+         {
+             if (path === undefined || path === null || String(path).trim() === '') return this.cwd;
+             const raw = String(path).replace(/\//g, '\\');
+@@ -265,31 +254,37 @@
+                 parts.push(part);
+             }
+             return drive + '\\' + parts.join('\\');
+-        }
+-        key(path) { return lower(this.normalize(path)); }
+-        parent(path)
++        };
++
++        this.key = function(path) { return lower(this.normalize(path)); };
++
++        this.parent = function(path)
+         {
+             const normalized = this.normalize(path);
+             if (normalized === 'C:\\') return null;
+             const pos = normalized.lastIndexOf('\\');
+             return pos === 2 ? 'C:\\' : normalized.slice(0, pos);
+-        }
+-        get(path) { return this.items.get(this.key(path)); }
+-        require(path)
++        };
++
++        this.get = function(path) { return this.items.get(this.key(path)); };
++
++        this.require = function(path)
+         {
+             const item = this.get(path);
+             if (!item) throw new PSError('Cannot find path: ' + this.normalize(path), 'PathNotFound');
+             return item;
+-        }
+-        putDir(path)
++        };
++
++        this.putDir = function(path)
+         {
+             const full = this.normalize(path);
+             const parent = this.parent(full);
+             if (parent && (!this.get(parent) || !this.get(parent).isDirectory)) throw new PSError('Parent directory does not exist: ' + parent, 'PathNotFound');
+             if (this.get(full)) throw new PSError('Item already exists: ' + full, 'ItemExists');
+             this.items.set(lower(full), { path: full, isDirectory: true, content: null });
+-        }
+-        write(path, content, append = false)
++        };
++
++        this.write = function(path, content, append = false)
+         {
+             const full = this.normalize(path);
+             const parent = this.parent(full);
+@@ -297,48 +292,47 @@
+             const existing = this.get(full);
+             if (existing && existing.isDirectory) throw new PSError('Cannot write to directory: ' + full, 'InvalidOperation');
+             this.items.set(lower(full), { path: existing ? existing.path : full, isDirectory: false, content: (append && existing ? existing.content : '') + String(content) });
+-        }
+-        remove(path)
++        };
++
++        this.remove = function(path)
+         {
+             const full = this.normalize(path);
+             if (full === 'C:\\') throw new PSError('Cannot remove drive root.', 'InvalidOperation');
+             const item = this.require(full);
+             if (item.isDirectory && this.children(full).length) throw new PSError('Directory is not empty: ' + full, 'DirectoryNotEmpty');
+             this.items.delete(lower(full));
+-        }
+-        children(path)
++        };
++
++        this.children = function(path)
+         {
+             const dir = this.require(path);
+             if (!dir.isDirectory) throw new PSError('Not a directory: ' + dir.path, 'NotDirectory');
+             return [...this.items.values()].filter(item => lower(this.parent(item.path) || '') === lower(dir.path))
+                 .sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.path.localeCompare(b.path));
+-        }
+-        toObject(item)
++        };
++
++        this.toObject = function(item)
+         {
+             return { Mode: item.isDirectory ? 'd----' : '-a---', Name: item.path.split('\\').pop() || 'C:\\', Length: item.isDirectory ? null : item.content.length, FullName: item.path, PSIsContainer: item.isDirectory };
+-        }
+-        setLocation(path)
++        };
++
++        this.setLocation = function(path)
+         {
+             const item = this.require(path);
+             if (!item.isDirectory) throw new PSError('Location is not a directory: ' + item.path, 'NotDirectory');
+             this.cwd = item.path;
+-        }
+-        snapshot()
++        };
++
++        this.snapshot = function()
+         {
+             return { cwd: this.cwd, items: [...this.items.values()].map(x => ({ ...x })) };
+-        }
++        };
++        this.reset();
+     }
+ 
+-    class Session
++    function Session(options = {})
+     {
+-        constructor(options = {})
+-        {
+-            this.fs = new VirtualFS();
+-            this.directorySeed = options.directoryEntries || null;
+-            this.directory = new AD.SimulatedDirectory(this.directorySeed);
+-            this.variables = new Map();
+-        }
+-        getVariable(name)
++        this.getVariable = function(name)
+         {
+             const key = lower(name);
+             if (key === 'pwd') return this.fs.cwd;
+@@ -348,23 +342,30 @@
+             if (key === 'null') return null;
+             if (key === 'error') return undefined;
+             return this.variables.get(key);
+-        }
+-        setVariable(name, value)
++        };
++
++        this.setVariable = function(name, value)
+         {
+             const key = lower(name);
+             if (['pwd','home','true','false','null'].includes(key)) throw new PSError('Variable is read-only: $' + name, 'VariableIsReadOnly');
+             this.variables.set(key, value);
+-        }
+-        reset()
++        };
++
++        this.reset = function()
+         {
+             this.fs.reset();
+             this.directory.reset(this.directorySeed);
+             this.variables.clear();
+-        }
+-        snapshot()
++        };
++
++        this.snapshot = function()
+         {
+             return { cwd: this.fs.cwd, variables: Object.fromEntries(this.variables), filesystem: this.fs.snapshot(), directory: { base: this.directory.root, count: this.directory.all().length, entries: this.directory.snapshot() } };
+-        }
++        };
++        this.fs = new VirtualFS();
++        this.directorySeed = options.directoryEntries || null;
++        this.directory = new AD.SimulatedDirectory(this.directorySeed);
++        this.variables = new Map();
+     }
+ 
+     function parseInvocation(source, session)
+@@ -411,35 +412,30 @@
+         return value === undefined || value === null ? '' : typeof value === 'object' ? JSON.stringify(value, null, 2) : stringValue(value);
+     }
+ 
+-    class PowerShellSimulator
++    function PowerShellSimulator(options = {})
+     {
+-        constructor(options = {})
+-        {
+-            this.version = VERSION;
+-            this.session = new Session(options);
+-            this.commands = new Map();
+-            this.aliases = new Map();
+-            this.functions = new Map();
+-            this._registerBuiltins();
+-            ADCmds.registerADCommands(this);
+-            if (Array.isArray(options.commands)) options.commands.forEach(command => this.registerCommand(command));
+-        }
+-        registerCommand(command)
++        this.registerCommand = function(command)
+         {
+             if (!command || typeof command.name !== 'string' || typeof command.run !== 'function') throw new TypeError('Command requires {name,run}.');
+             const name = lower(command.name);
+             this.commands.set(name, { ...command, name: command.name });
+             for (const alias of (command.aliases || [])) this.aliases.set(lower(alias), name);
+-        }
+-        listCommands()
++        };
++
++        this.listCommands = function()
+         {
+             return [...this.commands.values()].map(({ name, aliases = [], description = '' }) => ({ Name: name, Aliases: aliases.join(', '), Description: description })).sort((a, b) => a.Name.localeCompare(b.Name));
+-        }
+-        reset() { this.session.reset(); this.functions.clear(); }
+-        getPrompt() { return 'PS ' + this.session.fs.cwd + '> '; }
+-        parse(source) { return parse(source); }
+-        getSession() { return this.session.snapshot(); }
+-        async execute(source)
++        };
++
++        this.reset = function() { this.session.reset(); this.functions.clear(); };
++
++        this.getPrompt = function() { return 'PS ' + this.session.fs.cwd + '> '; };
++
++        this.parse = function(source) { return parse(source); };
++
++        this.getSession = function() { return this.session.snapshot(); };
++
++        this.execute = async function(source)
+         {
+             const output = [], errors = [], effects = [];
+             let printed = 0, operations = 0, lastObjects = [];
+@@ -561,8 +557,9 @@
+                 lastObjects = [];
+             }
+             return { success: errors.length === 0, output, errors, effects, cwd: this.session.fs.cwd, objects: lastObjects };
+-        }
+-        _registerBuiltins()
++        };
++
++        this._registerBuiltins = function()
+         {
+             const reg = (name, aliases, description, run) => this.registerCommand({ name, aliases, description, run });
+             reg('Write-Output', ['echo','write'], 'Send objects to the output pipeline.', async ({ args, input }) =>
+@@ -686,7 +683,15 @@
+                 return result([`${cmd.name} — ${cmd.description}${cmd.aliases.length ? '\nAliases: ' + cmd.aliases.join(', ') : ''}`]);
+             });
+             reg('Clear-Host', ['cls','clear'], 'Clear the terminal output via the host adapter.', async () => result([], [], ['clear']));
+-        }
++        };
++        this.version = VERSION;
++        this.session = new Session(options);
++        this.commands = new Map();
++        this.aliases = new Map();
++        this.functions = new Map();
++        this._registerBuiltins();
++        ADCmds.registerADCommands(this);
++        if (Array.isArray(options.commands)) options.commands.forEach(command => this.registerCommand(command));
+     }
+ 
+     function formatObjects(values)
+@@ -706,5 +711,13 @@
+         return [header, rule, ...objects.map(fmt)];
+     }
+ 
+-    return { PowerShellSimulator, VirtualFS, Session, PSError, parse, VERSION };
+-});
++
++    this.PowerShellSimulator = PowerShellSimulator;
++    this.VirtualFS = VirtualFS;
++    this.Session = Session;
++    this.PSError = PSError;
++    this.parse = parse;
++    this.VERSION = VERSION;
++}
++
++var PowerShellJS = new PowerShellJSContainer();
+diff --git a/res/PS_PARSER.js b/res/PS_PARSER.js
+index cc3498e..d692bdd 100644
+--- a/res/PS_PARSER.js
++++ b/res/PS_PARSER.js
+@@ -1,23 +1,16 @@
+ /* PowerShellJS v0.2 — structural parser. PowerShell subset, not PowerShell's formal grammar.
+    No eval, external dependencies, DOM or native bindings. */
+-(function(root, factory)
+-{
+-    const api = factory();
+-    if (typeof module === 'object' && module.exports) module.exports = api;
+-    if (root) root.PowerShellParser = api;
+-})(typeof globalThis !== 'undefined' ? globalThis : this, function()
++function PowerShellParserContainer()
+ {
+     'use strict';
+-    class SyntaxErrorPS extends Error
++    function SyntaxErrorPS(message, line = 1, column = 1)
+     {
+-        constructor(message, line = 1, column = 1)
+-        {
+-            super(message);
+-            this.name = 'SyntaxErrorPS';
+-            this.code = 'ParserError';
+-            this.line = line;
+-            this.column = column;
+-        }
++        const error = new Error(message);
++        error.name = 'SyntaxErrorPS';
++        error.code = 'ParserError';
++        error.line = line;
++        error.column = column;
++        return error;
+     }
+     const lineAt = (s, i) => 1 + (s.slice(0, i).match(/\n/g) || []).length;
+     function preprocess(src)
+@@ -208,5 +201,13 @@
+         if (src.length > 100000) throw new SyntaxErrorPS('Source too long.');
+         return partition(preprocess(src), ['\n',';']).map(({ text, line }) => statement(text, line));
+     }
+-    return { parse, partition, preprocess, SyntaxErrorPS, readGroup, VERSION: '0.2.0' };
+-});
++
++    this.parse = parse;
++    this.partition = partition;
++    this.preprocess = preprocess;
++    this.SyntaxErrorPS = SyntaxErrorPS;
++    this.readGroup = readGroup;
++    this.VERSION = '0.2.0';
++}
++
++var PowerShellParser = new PowerShellParserContainer();
+diff --git a/res/PS_TERMINAL_ADAPTER.js b/res/PS_TERMINAL_ADAPTER.js
+index 4594f39..1703bd9 100644
+--- a/res/PS_TERMINAL_ADAPTER.js
++++ b/res/PS_TERMINAL_ADAPTER.js
+@@ -1,20 +1,20 @@
+ /* Generic host adapter; COM_TERM.js is used as supplied, without PowerShell edits. */
+-(function(root)
++function PowerShellTerminalContainer()
+ {
+     'use strict';
+     function escapeMarkup(value)
+     {
+         return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+     }
+-    class EngineRegistry
++    function EngineRegistry()
+     {
+-        constructor() { this.factories = new Map(); }
+-        register(name, factory)
++        this.register = function(name, factory)
+         {
+             if (!name || typeof factory !== 'function') throw new TypeError('Provide engine name and factory.');
+             this.factories.set(name, factory);
+-        }
+-        create(name)
++        };
++
++        this.create = function(name)
+         {
+             const factory = this.factories.get(name);
+             if (!factory) throw new Error('Unknown simulator engine: ' + name);
+@@ -24,37 +24,26 @@
+                 if (typeof engine[method] !== 'function') throw new Error(`Engine ${name} must implement ${method}().`);
+             }
+             return engine;
+-        }
+-        names() { return [...this.factories.keys()]; }
++        };
++
++        this.names = function() { return [...this.factories.keys()]; };
++        this.factories = new Map();
+     }
+-    class TerminalEngineAdapter
++    function TerminalEngineAdapter(terminal, engine, options = {})
+     {
+-        constructor(terminal, engine, options = {})
+-        {
+-            this.terminal = terminal;
+-            this.engine = engine;
+-            this.busy = false;
+-            this.onStatus = options.onStatus || function() { };
+-            this.queue = Promise.resolve();
+-            this.syncPrompt();
+-            terminal.onInput((_command, _params, line) =>
+-            {
+-                // COM_TERM expects a synchronous Boolean; execution is queued afterwards.
+-                this.submit(line);
+-                return true;
+-            });
+-        }
+-        syncPrompt()
++        this.syncPrompt = function()
+         {
+             // Safe escaped markup; avoid changing generic COM_TERM or using global DOM selectors.
+             this.terminal.pushPrompt(escapeMarkup(this.engine.getPrompt()), { separator: '', replace: true });
+-        }
+-        submit(source)
++        };
++
++        this.submit = function(source)
+         {
+             this.queue = this.queue.catch(() => { }).then(() => this.run(source));
+             return this.queue;
+-        }
+-        async run(source)
++        };
++
++        this.run = async function(source)
+         {
+             this.busy = true;
+             this.onStatus('Running');
+@@ -75,8 +64,9 @@
+                 return { success: false, output: [], errors: [String(error)], effects: [] };
+             }
+             finally { this.busy = false; }
+-        }
+-        async reset()
++        };
++
++        this.reset = async function()
+         {
+             await this.queue.catch(() => { });
+             this.engine.reset();
+@@ -84,15 +74,31 @@
+             this.syncPrompt();
+             this.terminal.write('Virtual session reset.\n', 'meta');
+             this.onStatus('Ready');
+-        }
+-        async switchEngine(engine)
++        };
++
++        this.switchEngine = async function(engine)
+         {
+             await this.queue.catch(() => { });
+             this.engine = engine;
+             this.terminal.clear();
+             this.syncPrompt();
+             this.terminal.write('Simulator engine switched.\n', 'meta');
+-        }
++        };
++        this.terminal = terminal;
++        this.engine = engine;
++        this.busy = false;
++        this.onStatus = options.onStatus || function() { };
++        this.queue = Promise.resolve();
++        this.syncPrompt();
++        terminal.onInput((_command, _params, line) =>
++        {
++            // COM_TERM expects a synchronous Boolean; execution is queued afterwards.
++            this.submit(line);
++            return true;
++        });
+     }
+-    root.PowerShellTerminal = { EngineRegistry, TerminalEngineAdapter };
+-})(typeof globalThis !== 'undefined' ? globalThis : this);
++    this.EngineRegistry = EngineRegistry;
++    this.TerminalEngineAdapter = TerminalEngineAdapter;
++}
++
++var PowerShellTerminal = new PowerShellTerminalContainer();
+diff --git a/res/PS_TESTS.js b/res/PS_TESTS.js
+index 47ca766..239bf0c 100644
+--- a/res/PS_TESTS.js
++++ b/res/PS_TESTS.js
+@@ -1,8 +1,16 @@
+ /* Node used only to verify the browser-first engine. Run: node PS_TESTS.js */
+ 'use strict';
+ const assert = require('node:assert/strict');
+-const { PowerShellSimulator, parse, VirtualFS } = require('./PS_CORE.js');
+-const { SimulatedDirectory, parseLDAPFilter, parseADFilter } = require('./PS_AD.js');
++const fs = require('node:fs');
++const path = require('node:path');
++const vm = require('node:vm');
++for (const filename of ['PS_PARSER.js','PS_AD.js','PS_AD_COMMANDS.js','PS_CORE.js'])
++{
++    const filepath = path.join(__dirname, filename);
++    vm.runInThisContext(fs.readFileSync(filepath, 'utf8'), { filename: filepath });
++}
++const { PowerShellSimulator, parse, VirtualFS } = globalThis.PowerShellJS;
++const { SimulatedDirectory, parseLDAPFilter, parseADFilter } = globalThis.PowerShellAD;
+ const ps = new PowerShellSimulator(); let total = 0;
+ async function test(name, callback)
+ {
+@@ -31,7 +39,7 @@ async function bad(script, pattern, engine = ps)
+     assert.match(r.errors.join('\n'), pattern instanceof RegExp ? pattern : new RegExp(pattern));
+     return r;
+ }
+-(async () =>
++async function runTests()
+ {
+     await test('v0.2 structural AST assignment and pipeline', () =>
+     {
+@@ -252,5 +260,109 @@ async function bad(script, pattern, engine = ps)
+         assert.equal(typeof parseLDAPFilter('(cn=*)'), 'object');
+         assert.equal(parseADFilter('Enabled -eq $true')({ Enabled: true }), true);
+     });
++    await test('Public modules use plain constructor containers without class or IIFE wrappers', () =>
++    {
++        for (const filename of ['PS_PARSER.js','PS_AD.js','PS_AD_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'])
++        {
++            const source = fs.readFileSync(path.join(__dirname, filename), 'utf8');
++            assert.doesNotMatch(source, /\bclass\s+[A-Za-z_]/);
++            assert.doesNotMatch(source, /\(function\s*\(/);
++            assert.doesNotMatch(source, /module\.exports|\brequire\s*\([\s\x27\x22]/);
++        }
++        for (const [name, instance] of Object.entries({
++            PowerShellParser: globalThis.PowerShellParser,
++            PowerShellAD: globalThis.PowerShellAD,
++            PowerShellADCommands: globalThis.PowerShellADCommands,
++            PowerShellJS: globalThis.PowerShellJS
++        }))
++        {
++            assert.equal(typeof instance, 'object', name);
++        }
++    });
++    await test('Instance methods live directly on this, not prototypes', () =>
++    {
++        const directory = new SimulatedDirectory();
++        const fsInstance = new VirtualFS();
++        const engine = new PowerShellSimulator();
++        assert.ok(Object.hasOwn(directory, 'search'));
++        assert.ok(Object.hasOwn(directory, 'groupsOf'));
++        assert.ok(Object.hasOwn(fsInstance, 'normalize'));
++        assert.ok(Object.hasOwn(engine, 'execute'));
++        assert.ok(Object.hasOwn(engine, 'registerCommand'));
++        assert.equal(Object.getPrototypeOf(directory), SimulatedDirectory.prototype);
++        assert.equal(Object.hasOwn(SimulatedDirectory.prototype, 'search'), false);
++    });
++    await test('Independent instance state and reset semantics survive conversion', async () =>
++    {
++        const first = new PowerShellSimulator();
++        const second = new PowerShellSimulator();
++        await first.execute('Set-ADUser -Identity leo.chen -Department TestOnly');
++        assert.equal(first.session.directory.get('leo.chen').department, 'TestOnly');
++        assert.equal(second.session.directory.get('leo.chen').department, 'IT');
++        first.reset();
++        assert.equal(first.session.directory.get('leo.chen').department, 'IT');
++    });
++    await test('Constructor function errors remain standard Error objects', () =>
++    {
++        const cases = [
++            new globalThis.PowerShellParser.SyntaxErrorPS('syntax', 3, 5),
++            new globalThis.PowerShellAD.DirectoryError('directory', 'ADMissing'),
++            new globalThis.PowerShellJS.PSError('powershell', 'DemoError')
++        ];
++        for (const error of cases)
++        {
++            assert.ok(error instanceof Error);
++            assert.match(error.stack, /Error/);
++            assert.equal(typeof error.code, 'string');
++        }
++        assert.equal(cases[0].line, 3);
++        assert.equal(cases[0].column, 5);
++    });
++    await test('Classic script loading works without CommonJS globals', async () =>
++    {
++        const browser = vm.createContext({ console });
++        for (const filename of ['PS_PARSER.js','PS_AD.js','PS_AD_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'])
++        {
++            const filepath = path.join(__dirname, filename);
++            vm.runInContext(fs.readFileSync(filepath, 'utf8'), browser, { filename: filepath });
++        }
++        assert.equal(typeof browser.PowerShellJS.PowerShellSimulator, 'function');
++        assert.equal(typeof browser.PowerShellAD.SimulatedDirectory, 'function');
++        assert.equal(typeof browser.PowerShellTerminal.EngineRegistry, 'function');
++        const response = await new browser.PowerShellJS.PowerShellSimulator().execute('Get-ADUser -Filter *');
++        assert.equal(response.success, true);
++        assert.equal(response.objects.length, 7);
++    });
++    await test('Terminal adapter and interchangeable engine stay functional', async () =>
++    {
++        const loader = fs.readFileSync(path.join(__dirname, 'PS_TERMINAL_ADAPTER.js'), 'utf8');
++        const browser = vm.createContext({ console });
++        vm.runInContext(loader, browser);
++        const prompts = [], outputs = [], events = [];
++        const terminal = {
++            pushPrompt(value) { prompts.push(value); },
++            onInput(callback) { this.callback = callback; },
++            clear() { outputs.push('clear'); },
++            write(value) { outputs.push(value); }
++        };
++        const registry = new browser.PowerShellTerminal.EngineRegistry();
++        registry.register('demo', () => ({
++            getPrompt: () => 'PS C:\\Test> ',
++            execute: async source => ({ success: true, output: [source], errors: [], effects: [] }),
++            reset: () => events.push('reset')
++        }));
++        const engine = registry.create('demo');
++        const adapter = new browser.PowerShellTerminal.TerminalEngineAdapter(terminal, engine, {
++            onStatus: message => events.push(message)
++        });
++        const result = await adapter.submit('Get-Demo');
++        assert.equal(result.success, true);
++        assert.ok(outputs.some(x => x.includes('Get-Demo')));
++        assert.ok(prompts.length >= 2);
++        await adapter.reset();
++        assert.ok(events.includes('reset'));
++    });
+     if (!process.exitCode) console.log(`\n${total} tests passed. PowerShellJS v0.2`);
+-})();
++}
++
++runTests();
+diff --git a/res/PS_TESTS_v01.js b/res/PS_TESTS_v01.js
+index 8476e76..f6ad1a3 100644
+--- a/res/PS_TESTS_v01.js
++++ b/res/PS_TESTS_v01.js
+@@ -1,7 +1,15 @@
+ /* Run with: node PS_TESTS.js — no packages, no server, no network. */
+ 'use strict';
+ const assert = require('node:assert/strict');
+-const { PowerShellSimulator, parse, VirtualFS } = require('./PS_CORE.js');
++const fs = require('node:fs');
++const path = require('node:path');
++const vm = require('node:vm');
++for (const filename of ['PS_PARSER.js','PS_AD.js','PS_AD_COMMANDS.js','PS_CORE.js'])
++{
++    const filepath = path.join(__dirname, filename);
++    vm.runInThisContext(fs.readFileSync(filepath, 'utf8'), { filename: filepath });
++}
++const { PowerShellSimulator, parse, VirtualFS } = globalThis.PowerShellJS;
+ let passes = 0;
+ async function test(label, fn)
+ {
+@@ -20,7 +28,7 @@ async function run(source)
+     if (!response.success) throw new Error(response.errors.join('\n'));
+     return response;
+ }
+-(async () =>
++async function runTests()
+ {
+     await test('Parser recognizes assignment, pipelines and comments', () =>
+     {
+@@ -113,4 +121,6 @@ async function run(source)
+         assert.deepEqual((await run('ht')).output, ['works']);
+     });
+     if (!process.exitCode) console.log(`\n${passes} tests passed. PowerShellJS v0.1`);
+-})();
++}
++
++runTests();

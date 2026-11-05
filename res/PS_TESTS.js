@@ -1,8 +1,16 @@
 /* Node used only to verify the browser-first engine. Run: node PS_TESTS.js */
 'use strict';
 const assert = require('node:assert/strict');
-const { PowerShellSimulator, parse, VirtualFS } = require('./PS_CORE.js');
-const { SimulatedDirectory, parseLDAPFilter, parseADFilter } = require('./PS_AD.js');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+for (const filename of ['PS_PARSER.js','PS_AD.js','PS_AD_COMMANDS.js','PS_CORE.js'])
+{
+    const filepath = path.join(__dirname, filename);
+    vm.runInThisContext(fs.readFileSync(filepath, 'utf8'), { filename: filepath });
+}
+const { PowerShellSimulator, parse, VirtualFS } = globalThis.PowerShellJS;
+const { SimulatedDirectory, parseLDAPFilter, parseADFilter } = globalThis.PowerShellAD;
 const ps = new PowerShellSimulator(); let total = 0;
 async function test(name, callback)
 {
@@ -31,7 +39,7 @@ async function bad(script, pattern, engine = ps)
     assert.match(r.errors.join('\n'), pattern instanceof RegExp ? pattern : new RegExp(pattern));
     return r;
 }
-(async () =>
+async function runTests()
 {
     await test('v0.2 structural AST assignment and pipeline', () =>
     {
@@ -252,5 +260,109 @@ async function bad(script, pattern, engine = ps)
         assert.equal(typeof parseLDAPFilter('(cn=*)'), 'object');
         assert.equal(parseADFilter('Enabled -eq $true')({ Enabled: true }), true);
     });
+    await test('Public modules use plain constructor containers without class or IIFE wrappers', () =>
+    {
+        for (const filename of ['PS_PARSER.js','PS_AD.js','PS_AD_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'])
+        {
+            const source = fs.readFileSync(path.join(__dirname, filename), 'utf8');
+            assert.doesNotMatch(source, /\bclass\s+[A-Za-z_]/);
+            assert.doesNotMatch(source, /\(function\s*\(/);
+            assert.doesNotMatch(source, /module\.exports|\brequire\s*\([\s\x27\x22]/);
+        }
+        for (const [name, instance] of Object.entries({
+            PowerShellParser: globalThis.PowerShellParser,
+            PowerShellAD: globalThis.PowerShellAD,
+            PowerShellADCommands: globalThis.PowerShellADCommands,
+            PowerShellJS: globalThis.PowerShellJS
+        }))
+        {
+            assert.equal(typeof instance, 'object', name);
+        }
+    });
+    await test('Instance methods live directly on this, not prototypes', () =>
+    {
+        const directory = new SimulatedDirectory();
+        const fsInstance = new VirtualFS();
+        const engine = new PowerShellSimulator();
+        assert.ok(Object.hasOwn(directory, 'search'));
+        assert.ok(Object.hasOwn(directory, 'groupsOf'));
+        assert.ok(Object.hasOwn(fsInstance, 'normalize'));
+        assert.ok(Object.hasOwn(engine, 'execute'));
+        assert.ok(Object.hasOwn(engine, 'registerCommand'));
+        assert.equal(Object.getPrototypeOf(directory), SimulatedDirectory.prototype);
+        assert.equal(Object.hasOwn(SimulatedDirectory.prototype, 'search'), false);
+    });
+    await test('Independent instance state and reset semantics survive conversion', async () =>
+    {
+        const first = new PowerShellSimulator();
+        const second = new PowerShellSimulator();
+        await first.execute('Set-ADUser -Identity leo.chen -Department TestOnly');
+        assert.equal(first.session.directory.get('leo.chen').department, 'TestOnly');
+        assert.equal(second.session.directory.get('leo.chen').department, 'IT');
+        first.reset();
+        assert.equal(first.session.directory.get('leo.chen').department, 'IT');
+    });
+    await test('Constructor function errors remain standard Error objects', () =>
+    {
+        const cases = [
+            new globalThis.PowerShellParser.SyntaxErrorPS('syntax', 3, 5),
+            new globalThis.PowerShellAD.DirectoryError('directory', 'ADMissing'),
+            new globalThis.PowerShellJS.PSError('powershell', 'DemoError')
+        ];
+        for (const error of cases)
+        {
+            assert.ok(error instanceof Error);
+            assert.match(error.stack, /Error/);
+            assert.equal(typeof error.code, 'string');
+        }
+        assert.equal(cases[0].line, 3);
+        assert.equal(cases[0].column, 5);
+    });
+    await test('Classic script loading works without CommonJS globals', async () =>
+    {
+        const browser = vm.createContext({ console });
+        for (const filename of ['PS_PARSER.js','PS_AD.js','PS_AD_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'])
+        {
+            const filepath = path.join(__dirname, filename);
+            vm.runInContext(fs.readFileSync(filepath, 'utf8'), browser, { filename: filepath });
+        }
+        assert.equal(typeof browser.PowerShellJS.PowerShellSimulator, 'function');
+        assert.equal(typeof browser.PowerShellAD.SimulatedDirectory, 'function');
+        assert.equal(typeof browser.PowerShellTerminal.EngineRegistry, 'function');
+        const response = await new browser.PowerShellJS.PowerShellSimulator().execute('Get-ADUser -Filter *');
+        assert.equal(response.success, true);
+        assert.equal(response.objects.length, 7);
+    });
+    await test('Terminal adapter and interchangeable engine stay functional', async () =>
+    {
+        const loader = fs.readFileSync(path.join(__dirname, 'PS_TERMINAL_ADAPTER.js'), 'utf8');
+        const browser = vm.createContext({ console });
+        vm.runInContext(loader, browser);
+        const prompts = [], outputs = [], events = [];
+        const terminal = {
+            pushPrompt(value) { prompts.push(value); },
+            onInput(callback) { this.callback = callback; },
+            clear() { outputs.push('clear'); },
+            write(value) { outputs.push(value); }
+        };
+        const registry = new browser.PowerShellTerminal.EngineRegistry();
+        registry.register('demo', () => ({
+            getPrompt: () => 'PS C:\\Test> ',
+            execute: async source => ({ success: true, output: [source], errors: [], effects: [] }),
+            reset: () => events.push('reset')
+        }));
+        const engine = registry.create('demo');
+        const adapter = new browser.PowerShellTerminal.TerminalEngineAdapter(terminal, engine, {
+            onStatus: message => events.push(message)
+        });
+        const result = await adapter.submit('Get-Demo');
+        assert.equal(result.success, true);
+        assert.ok(outputs.some(x => x.includes('Get-Demo')));
+        assert.ok(prompts.length >= 2);
+        await adapter.reset();
+        assert.ok(events.includes('reset'));
+    });
     if (!process.exitCode) console.log(`\n${total} tests passed. PowerShellJS v0.2`);
-})();
+}
+
+runTests();

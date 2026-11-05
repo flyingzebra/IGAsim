@@ -1,25 +1,16 @@
 /* PowerShellJS v0.2 — browser-first, dependency-free, deliberately limited PowerShell simulator.
  * No eval(), OS shell, host filesystem, remote requests or PowerShell subprocess.
- * CommonJS export is provided only for offline regression tests; no Node dependency.
+ * Browser-first plain constructor containers; no CommonJS export.
  */
-(function(root, factory)
-{
-    'use strict';
-    var exports = factory();
-    if (typeof module === 'object' && module.exports) module.exports = exports;
-    if (root) root.PowerShellJS = exports;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function()
+function PowerShellJSContainer()
 {
     'use strict';
     const VERSION = '0.2.0';
     // Core is deliberately UI-independent. Browser globals are assigned by script tags;
-    // require() is used only in Node regression tests.
-    const ParserV2 = (typeof globalThis !== 'undefined' && globalThis.PowerShellParser) ||
-        (typeof require === 'function' ? require('./PS_PARSER.js') : null);
-    const AD = (typeof globalThis !== 'undefined' && globalThis.PowerShellAD) ||
-        (typeof require === 'function' ? require('./PS_AD.js') : null);
-    const ADCmds = (typeof globalThis !== 'undefined' && globalThis.PowerShellADCommands) ||
-        (typeof require === 'function' ? require('./PS_AD_COMMANDS.js') : null);
+    // Node regression tests load these browser scripts through vm.
+    const ParserV2 = typeof PowerShellParser !== 'undefined' ? PowerShellParser : null;
+    const AD = typeof PowerShellAD !== 'undefined' ? PowerShellAD : null;
+    const ADCmds = typeof PowerShellADCommands !== 'undefined' ? PowerShellADCommands : null;
     if (!ParserV2 || !AD || !ADCmds) throw new Error('Load PS_PARSER.js, PS_AD.js and PS_AD_COMMANDS.js before PS_CORE.js.');
 
     const MAX_SOURCE_LENGTH = 100000;
@@ -28,14 +19,12 @@
     const MAX_OUTPUT_CHARS = 500000;
     const lower = value => String(value).toLowerCase();
 
-    class PSError extends Error
+    function PSError(message, code = 'PSSimulationError')
     {
-        constructor(message, code = 'PSSimulationError')
-        {
-            super(message);
-            this.name = 'PSError';
-            this.code = code;
-        }
+        const error = new Error(message);
+        error.name = 'PSError';
+        error.code = code;
+        return error;
     }
 
     function isEscaped(src, pos)
@@ -238,10 +227,9 @@
 
     function parse(source) { return ParserV2.parse(source); }
 
-    class VirtualFS
+    function VirtualFS()
     {
-        constructor() { this.reset(); }
-        reset()
+        this.reset = function()
         {
             this.items = new Map();
             this.cwd = 'C:\\Users\\Demo';
@@ -249,8 +237,9 @@
             this.write('C:\\Users\\Demo\\README.txt', 'PowerShellJS v0.2\nThis is a simulated filesystem.\n');
             this.write('C:\\Temp\\example.txt', 'Hello from your browser-only PowerShell!\n');
             this.write('C:\\Windows\\version.txt', 'Simulated Windows Environment v0.1\n');
-        }
-        normalize(path)
+        };
+
+        this.normalize = function(path)
         {
             if (path === undefined || path === null || String(path).trim() === '') return this.cwd;
             const raw = String(path).replace(/\//g, '\\');
@@ -265,31 +254,37 @@
                 parts.push(part);
             }
             return drive + '\\' + parts.join('\\');
-        }
-        key(path) { return lower(this.normalize(path)); }
-        parent(path)
+        };
+
+        this.key = function(path) { return lower(this.normalize(path)); };
+
+        this.parent = function(path)
         {
             const normalized = this.normalize(path);
             if (normalized === 'C:\\') return null;
             const pos = normalized.lastIndexOf('\\');
             return pos === 2 ? 'C:\\' : normalized.slice(0, pos);
-        }
-        get(path) { return this.items.get(this.key(path)); }
-        require(path)
+        };
+
+        this.get = function(path) { return this.items.get(this.key(path)); };
+
+        this.require = function(path)
         {
             const item = this.get(path);
             if (!item) throw new PSError('Cannot find path: ' + this.normalize(path), 'PathNotFound');
             return item;
-        }
-        putDir(path)
+        };
+
+        this.putDir = function(path)
         {
             const full = this.normalize(path);
             const parent = this.parent(full);
             if (parent && (!this.get(parent) || !this.get(parent).isDirectory)) throw new PSError('Parent directory does not exist: ' + parent, 'PathNotFound');
             if (this.get(full)) throw new PSError('Item already exists: ' + full, 'ItemExists');
             this.items.set(lower(full), { path: full, isDirectory: true, content: null });
-        }
-        write(path, content, append = false)
+        };
+
+        this.write = function(path, content, append = false)
         {
             const full = this.normalize(path);
             const parent = this.parent(full);
@@ -297,48 +292,47 @@
             const existing = this.get(full);
             if (existing && existing.isDirectory) throw new PSError('Cannot write to directory: ' + full, 'InvalidOperation');
             this.items.set(lower(full), { path: existing ? existing.path : full, isDirectory: false, content: (append && existing ? existing.content : '') + String(content) });
-        }
-        remove(path)
+        };
+
+        this.remove = function(path)
         {
             const full = this.normalize(path);
             if (full === 'C:\\') throw new PSError('Cannot remove drive root.', 'InvalidOperation');
             const item = this.require(full);
             if (item.isDirectory && this.children(full).length) throw new PSError('Directory is not empty: ' + full, 'DirectoryNotEmpty');
             this.items.delete(lower(full));
-        }
-        children(path)
+        };
+
+        this.children = function(path)
         {
             const dir = this.require(path);
             if (!dir.isDirectory) throw new PSError('Not a directory: ' + dir.path, 'NotDirectory');
             return [...this.items.values()].filter(item => lower(this.parent(item.path) || '') === lower(dir.path))
                 .sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.path.localeCompare(b.path));
-        }
-        toObject(item)
+        };
+
+        this.toObject = function(item)
         {
             return { Mode: item.isDirectory ? 'd----' : '-a---', Name: item.path.split('\\').pop() || 'C:\\', Length: item.isDirectory ? null : item.content.length, FullName: item.path, PSIsContainer: item.isDirectory };
-        }
-        setLocation(path)
+        };
+
+        this.setLocation = function(path)
         {
             const item = this.require(path);
             if (!item.isDirectory) throw new PSError('Location is not a directory: ' + item.path, 'NotDirectory');
             this.cwd = item.path;
-        }
-        snapshot()
+        };
+
+        this.snapshot = function()
         {
             return { cwd: this.cwd, items: [...this.items.values()].map(x => ({ ...x })) };
-        }
+        };
+        this.reset();
     }
 
-    class Session
+    function Session(options = {})
     {
-        constructor(options = {})
-        {
-            this.fs = new VirtualFS();
-            this.directorySeed = options.directoryEntries || null;
-            this.directory = new AD.SimulatedDirectory(this.directorySeed);
-            this.variables = new Map();
-        }
-        getVariable(name)
+        this.getVariable = function(name)
         {
             const key = lower(name);
             if (key === 'pwd') return this.fs.cwd;
@@ -348,23 +342,30 @@
             if (key === 'null') return null;
             if (key === 'error') return undefined;
             return this.variables.get(key);
-        }
-        setVariable(name, value)
+        };
+
+        this.setVariable = function(name, value)
         {
             const key = lower(name);
             if (['pwd','home','true','false','null'].includes(key)) throw new PSError('Variable is read-only: $' + name, 'VariableIsReadOnly');
             this.variables.set(key, value);
-        }
-        reset()
+        };
+
+        this.reset = function()
         {
             this.fs.reset();
             this.directory.reset(this.directorySeed);
             this.variables.clear();
-        }
-        snapshot()
+        };
+
+        this.snapshot = function()
         {
             return { cwd: this.fs.cwd, variables: Object.fromEntries(this.variables), filesystem: this.fs.snapshot(), directory: { base: this.directory.root, count: this.directory.all().length, entries: this.directory.snapshot() } };
-        }
+        };
+        this.fs = new VirtualFS();
+        this.directorySeed = options.directoryEntries || null;
+        this.directory = new AD.SimulatedDirectory(this.directorySeed);
+        this.variables = new Map();
     }
 
     function parseInvocation(source, session)
@@ -411,35 +412,30 @@
         return value === undefined || value === null ? '' : typeof value === 'object' ? JSON.stringify(value, null, 2) : stringValue(value);
     }
 
-    class PowerShellSimulator
+    function PowerShellSimulator(options = {})
     {
-        constructor(options = {})
-        {
-            this.version = VERSION;
-            this.session = new Session(options);
-            this.commands = new Map();
-            this.aliases = new Map();
-            this.functions = new Map();
-            this._registerBuiltins();
-            ADCmds.registerADCommands(this);
-            if (Array.isArray(options.commands)) options.commands.forEach(command => this.registerCommand(command));
-        }
-        registerCommand(command)
+        this.registerCommand = function(command)
         {
             if (!command || typeof command.name !== 'string' || typeof command.run !== 'function') throw new TypeError('Command requires {name,run}.');
             const name = lower(command.name);
             this.commands.set(name, { ...command, name: command.name });
             for (const alias of (command.aliases || [])) this.aliases.set(lower(alias), name);
-        }
-        listCommands()
+        };
+
+        this.listCommands = function()
         {
             return [...this.commands.values()].map(({ name, aliases = [], description = '' }) => ({ Name: name, Aliases: aliases.join(', '), Description: description })).sort((a, b) => a.Name.localeCompare(b.Name));
-        }
-        reset() { this.session.reset(); this.functions.clear(); }
-        getPrompt() { return 'PS ' + this.session.fs.cwd + '> '; }
-        parse(source) { return parse(source); }
-        getSession() { return this.session.snapshot(); }
-        async execute(source)
+        };
+
+        this.reset = function() { this.session.reset(); this.functions.clear(); };
+
+        this.getPrompt = function() { return 'PS ' + this.session.fs.cwd + '> '; };
+
+        this.parse = function(source) { return parse(source); };
+
+        this.getSession = function() { return this.session.snapshot(); };
+
+        this.execute = async function(source)
         {
             const output = [], errors = [], effects = [];
             let printed = 0, operations = 0, lastObjects = [];
@@ -561,8 +557,9 @@
                 lastObjects = [];
             }
             return { success: errors.length === 0, output, errors, effects, cwd: this.session.fs.cwd, objects: lastObjects };
-        }
-        _registerBuiltins()
+        };
+
+        this._registerBuiltins = function()
         {
             const reg = (name, aliases, description, run) => this.registerCommand({ name, aliases, description, run });
             reg('Write-Output', ['echo','write'], 'Send objects to the output pipeline.', async ({ args, input }) =>
@@ -686,7 +683,15 @@
                 return result([`${cmd.name} — ${cmd.description}${cmd.aliases.length ? '\nAliases: ' + cmd.aliases.join(', ') : ''}`]);
             });
             reg('Clear-Host', ['cls','clear'], 'Clear the terminal output via the host adapter.', async () => result([], [], ['clear']));
-        }
+        };
+        this.version = VERSION;
+        this.session = new Session(options);
+        this.commands = new Map();
+        this.aliases = new Map();
+        this.functions = new Map();
+        this._registerBuiltins();
+        ADCmds.registerADCommands(this);
+        if (Array.isArray(options.commands)) options.commands.forEach(command => this.registerCommand(command));
     }
 
     function formatObjects(values)
@@ -706,5 +711,13 @@
         return [header, rule, ...objects.map(fmt)];
     }
 
-    return { PowerShellSimulator, VirtualFS, Session, PSError, parse, VERSION };
-});
+
+    this.PowerShellSimulator = PowerShellSimulator;
+    this.VirtualFS = VirtualFS;
+    this.Session = Session;
+    this.PSError = PSError;
+    this.parse = parse;
+    this.VERSION = VERSION;
+}
+
+var PowerShellJS = new PowerShellJSContainer();

@@ -1,20 +1,20 @@
 /* Generic host adapter; COM_TERM.js is used as supplied, without PowerShell edits. */
-(function(root)
+function PowerShellTerminalContainer()
 {
     'use strict';
     function escapeMarkup(value)
     {
         return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
-    class EngineRegistry
+    function EngineRegistry()
     {
-        constructor() { this.factories = new Map(); }
-        register(name, factory)
+        this.register = function(name, factory)
         {
             if (!name || typeof factory !== 'function') throw new TypeError('Provide engine name and factory.');
             this.factories.set(name, factory);
-        }
-        create(name)
+        };
+
+        this.create = function(name)
         {
             const factory = this.factories.get(name);
             if (!factory) throw new Error('Unknown simulator engine: ' + name);
@@ -24,37 +24,26 @@
                 if (typeof engine[method] !== 'function') throw new Error(`Engine ${name} must implement ${method}().`);
             }
             return engine;
-        }
-        names() { return [...this.factories.keys()]; }
+        };
+
+        this.names = function() { return [...this.factories.keys()]; };
+        this.factories = new Map();
     }
-    class TerminalEngineAdapter
+    function TerminalEngineAdapter(terminal, engine, options = {})
     {
-        constructor(terminal, engine, options = {})
-        {
-            this.terminal = terminal;
-            this.engine = engine;
-            this.busy = false;
-            this.onStatus = options.onStatus || function() { };
-            this.queue = Promise.resolve();
-            this.syncPrompt();
-            terminal.onInput((_command, _params, line) =>
-            {
-                // COM_TERM expects a synchronous Boolean; execution is queued afterwards.
-                this.submit(line);
-                return true;
-            });
-        }
-        syncPrompt()
+        this.syncPrompt = function()
         {
             // Safe escaped markup; avoid changing generic COM_TERM or using global DOM selectors.
             this.terminal.pushPrompt(escapeMarkup(this.engine.getPrompt()), { separator: '', replace: true });
-        }
-        submit(source)
+        };
+
+        this.submit = function(source)
         {
             this.queue = this.queue.catch(() => { }).then(() => this.run(source));
             return this.queue;
-        }
-        async run(source)
+        };
+
+        this.run = async function(source)
         {
             this.busy = true;
             this.onStatus('Running');
@@ -75,8 +64,9 @@
                 return { success: false, output: [], errors: [String(error)], effects: [] };
             }
             finally { this.busy = false; }
-        }
-        async reset()
+        };
+
+        this.reset = async function()
         {
             await this.queue.catch(() => { });
             this.engine.reset();
@@ -84,15 +74,31 @@
             this.syncPrompt();
             this.terminal.write('Virtual session reset.\n', 'meta');
             this.onStatus('Ready');
-        }
-        async switchEngine(engine)
+        };
+
+        this.switchEngine = async function(engine)
         {
             await this.queue.catch(() => { });
             this.engine = engine;
             this.terminal.clear();
             this.syncPrompt();
             this.terminal.write('Simulator engine switched.\n', 'meta');
-        }
+        };
+        this.terminal = terminal;
+        this.engine = engine;
+        this.busy = false;
+        this.onStatus = options.onStatus || function() { };
+        this.queue = Promise.resolve();
+        this.syncPrompt();
+        terminal.onInput((_command, _params, line) =>
+        {
+            // COM_TERM expects a synchronous Boolean; execution is queued afterwards.
+            this.submit(line);
+            return true;
+        });
     }
-    root.PowerShellTerminal = { EngineRegistry, TerminalEngineAdapter };
-})(typeof globalThis !== 'undefined' ? globalThis : this);
+    this.EngineRegistry = EngineRegistry;
+    this.TerminalEngineAdapter = TerminalEngineAdapter;
+}
+
+var PowerShellTerminal = new PowerShellTerminalContainer();

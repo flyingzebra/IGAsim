@@ -1,12 +1,8 @@
 /* ActiveDirectory-style cmdlets operating on the in-memory directory provider. */
-(function(root, factory)
-{
-    const api = factory(root && root.PowerShellAD || (typeof require === 'function' ? require('./PS_AD.js') : null));
-    if (typeof module === 'object' && module.exports) module.exports = api;
-    if (root) root.PowerShellADCommands = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function(AD)
+function PowerShellADCommandsContainer()
 {
     'use strict';
+    const AD = typeof PowerShellAD !== 'undefined' ? PowerShellAD : null;
     if (!AD) throw new Error('Load PS_AD.js before PS_AD_COMMANDS.js.');
     const { DirectoryError, attr } = AD;
     const str = v => String(v ?? ''), lc = v => str(v).toLowerCase();
@@ -141,5 +137,9 @@
             return { values: args.has('passthru') ? [project(group, 'group', 'member', session.directory)] : [], messages: [], effects: [] };
         });
     }
-    return { registerADCommands, VERSION: '0.2.0' };
-});
+
+    this.registerADCommands = registerADCommands;
+    this.VERSION = '0.2.0';
+}
+
+var PowerShellADCommands = new PowerShellADCommandsContainer();
