@@ -1,11 +1,11 @@
-/* ENTRA_CORE v0.1 standalone regression suite. Run: node res/ENTRA_CORE.test.js */
+/* ENTRA_CORE v0.1 standalone regression suite. Run: node test/ENTRA_CORE.test.js */
 'use strict';
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const source = fs.readFileSync(path.join(__dirname, 'ENTRA_CORE.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '..', 'res', 'ENTRA_CORE.js'), 'utf8');
 const sandbox = vm.createContext({});
 vm.runInContext(source, sandbox, { filename: 'ENTRA_CORE.js' });
 const EntraDirectory = sandbox.EntraDirectory;

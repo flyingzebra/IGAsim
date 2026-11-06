@@ -137,7 +137,7 @@ From the repository root:
 
 ```bash
 node --check res/ENTRA_CORE.js
-node res/ENTRA_CORE.test.js
+node test/ENTRA_CORE.test.js
 ```
 
 The test suite covers global script loading, schema and state isolation, OData queries, pagination, CRUD, relationship operations, error envelopes, and simulated session/reset behavior. Node is used **only** for testing; browser runtime has no dependencies.

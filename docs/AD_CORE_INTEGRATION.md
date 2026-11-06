@@ -39,10 +39,10 @@ The compatibility layer retains the `PowerShellAD` global *namespace* for existi
 ## Testing (repository root)
 
 ```bash
-node res/PS_TESTS.js
-node res/PS_TESTS_v01.js
-node res/ActiveDirectory.test.js
-node res/AD_INTEGRATION_SMOKE.js
+node test/PS_TESTS.js
+node test/PS_TESTS_v01.js
+node test/ActiveDirectory.test.js
+node test/AD_INTEGRATION_SMOKE.js
 ```
 
 The suites contain 50 + 18 + 33 + 14 checks (115 total). The integration suite verifies PowerShell-to-LDAP and LDAP-to-PowerShell visibility, raw LDAP add/modify/delete, mutable memberships, bitwise account filters, reset, nested groups and preservation of both fixtures.

@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),assert=require('node:assert/strict');
-for(const name of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js'])vm.runInThisContext(fs.readFileSync(path.join(__dirname,name),'utf8'),{filename:name});
+for(const name of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js'])vm.runInThisContext(fs.readFileSync(path.join(__dirname,'..','res',name),'utf8'),{filename:name});
 const {PowerShellSimulator}=globalThis.PowerShellJS;
 (async()=>{
 let tests=0;function check(x){tests++;console.log('PASS '+x)}

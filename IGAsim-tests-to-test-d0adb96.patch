@@ -1,0 +1,564 @@
+diff --git a/README.md b/README.md
+index 60f045c..6b5e258 100644
+--- a/README.md
++++ b/README.md
+@@ -10,7 +10,7 @@ A **static, browser-only** PowerShell *subset* simulator with a separate parser,
+ 4. Click **Inspect AST** to see the parsed control-flow structure before execution.
+ 5. **Reset sandbox** reinitializes variables, virtual files, on-premises directory objects, cloud tenant objects, simulated Graph connection and LDAP query log. Terminal command history in `localStorage` is separate.
+ 
+-Run the engine tests from the repository root (Node is used **only** for tests): `node res/PS_TESTS.js`, `node res/PS_TESTS_v01.js`, `node res/ActiveDirectory.test.js`, and `node res/AD_INTEGRATION_SMOKE.js`, `node res/ENTRA_CORE.test.js`, and `node res/PS_GRAPH_TESTS.js`.
++Run the engine tests from the repository root (Node is used **only** for tests): `node test/PS_TESTS.js`, `node test/PS_TESTS_v01.js`, `node test/ActiveDirectory.test.js`, and `node test/AD_INTEGRATION_SMOKE.js`, `node test/ENTRA_CORE.test.js`, and `node test/PS_GRAPH_TESTS.js`.
+ 
+ ## Architecture
+ 
+@@ -118,15 +118,16 @@ Get-LDAPQueryLog
+ 
+ ## Testing
+ 
+-- `node res/PS_GRAPH_TESTS.js`: cloud PowerShell cmdlet and integration tests.
+-- `node res/PS_GRAPH_SAMPLES.test.js`: all 14 selectable Microsoft Graph example scripts and the UI button wiring.
+-- `node res/ENTRA_CORE.test.js`: standalone Graph core tests.
+-- `node res/ENTITLEMENT_TESTS.js`: governance core CRUD tests, relationship integrity, 9 runnable scripts, and HTML button/Run verification.
++Run every regression suite with `node test/run-all.js`. The test files live in [`test/`](test/README.md); application modules stay in `res/`. A detailed test-readiness map is in [`docs/IGAsim-Capability-Test-Checklist.md`](docs/IGAsim-Capability-Test-Checklist.md).
+ 
+-- `node res/PS_TESTS.js`: 50 regression tests covering parser, control flow, virtual filesystem, AD queries, LDAP filters, bitwise and transitive matching, group mutations, reset and error handling.
+-- `node res/PS_TESTS_v01.js`: original 18 v0.1 compatibility tests.
+-- `node res/ActiveDirectory.test.js`: 33 standalone LDAP tests.
+-- `node res/AD_INTEGRATION_SMOKE.js`: 14 shared-backend integration tests.
++- `node test/PS_GRAPH_TESTS.js`: cloud PowerShell cmdlet and integration tests.
++- `node test/PS_GRAPH_SAMPLES.test.js`: all 14 selectable Microsoft Graph example scripts and the UI button wiring.
++- `node test/ENTRA_CORE.test.js`: standalone Graph core tests.
++- `node test/ENTITLEMENT_TESTS.js`: governance core CRUD tests, relationship integrity, 9 runnable scripts, and HTML button/Run verification.
++- `node test/PS_TESTS.js`: 50 regression tests covering parser, control flow, virtual filesystem, AD queries, LDAP filters, bitwise and transitive matching, group mutations, reset and error handling.
++- `node test/PS_TESTS_v01.js`: original 18 v0.1 compatibility tests.
++- `node test/ActiveDirectory.test.js`: 33 standalone LDAP tests.
++- `node test/AD_INTEGRATION_SMOKE.js`: 14 shared-backend integration tests.
+ - JavaScript syntax checks pass. An automated graphical Chromium smoke test **could not complete** in the provided environment; open the standalone HTML in a desktop browser for a manual UI check.
+ 
+ ## References
+diff --git a/docs/AD_CORE_INTEGRATION.md b/docs/AD_CORE_INTEGRATION.md
+index d5d783e..26bc500 100644
+--- a/docs/AD_CORE_INTEGRATION.md
++++ b/docs/AD_CORE_INTEGRATION.md
+@@ -39,10 +39,10 @@ The compatibility layer retains the `PowerShellAD` global *namespace* for existi
+ ## Testing (repository root)
+ 
+ ```bash
+-node res/PS_TESTS.js
+-node res/PS_TESTS_v01.js
+-node res/ActiveDirectory.test.js
+-node res/AD_INTEGRATION_SMOKE.js
++node test/PS_TESTS.js
++node test/PS_TESTS_v01.js
++node test/ActiveDirectory.test.js
++node test/AD_INTEGRATION_SMOKE.js
+ ```
+ 
+ The suites contain 50 + 18 + 33 + 14 checks (115 total). The integration suite verifies PowerShell-to-LDAP and LDAP-to-PowerShell visibility, raw LDAP add/modify/delete, mutable memberships, bitwise account filters, reset, nested groups and preservation of both fixtures.
+diff --git a/docs/APPLYING.md b/docs/APPLYING.md
+index 61402bc..636993d 100644
+--- a/docs/APPLYING.md
++++ b/docs/APPLYING.md
+@@ -2,10 +2,12 @@
+ 
+ Base revision: `46288fe657efc58a10cd8249b01351fa2501d19a`.
+ 
++**Historical guide:** This documents an earlier patch. On the original revision, the test initially lived under `res/`; in the current IGAsim tree, its permanent location is `test/ActiveDirectory.test.js`. Apply the current test-directory migration before running the command shown below.
++
+ Changes are limited to four files in their existing repository subdirectories:
+ 
+ - `res/ActiveDirectory.js`: declares `this.DB = {...}` (11 fictional directory entries) and `this.LDAP = function(request,params){...}` directly inside `function ActiveDirectory()`. Retains existing calls and independent instances. No file reads, external JSON fetches, network calls, or CORS requirements.
+-- `res/ActiveDirectory.test.js`: extends the regression suite to 32 checks.
++- `test/ActiveDirectory.test.js`: extends the regression suite to 32 checks.
+ - `tools/ActiveDirectory-demo.html`: offline, relative script import and inline dataset inspector; no JSON file import or fetch.
+ - `docs/README-ActiveDirectoryJS.md`: documents the inline-only default, API, paths and offline behavior.
+ 
+@@ -16,7 +18,7 @@ git checkout 46288fe657efc58a10cd8249b01351fa2501d19a
+ # (optional) git switch -c refactor/inline-active-directory-ldap
+ git apply --check IGAsim-inline-ad.patch
+ git apply IGAsim-inline-ad.patch
+-node res/ActiveDirectory.test.js
++node test/ActiveDirectory.test.js
+ # commit changes after verification
+ ```
+ 
+diff --git a/docs/ENTITLEMENT_MANAGEMENT.md b/docs/ENTITLEMENT_MANAGEMENT.md
+index 7d108ac..aedf8fc 100644
+--- a/docs/ENTITLEMENT_MANAGEMENT.md
++++ b/docs/ENTITLEMENT_MANAGEMENT.md
+@@ -86,14 +86,14 @@ The examples in the HTML editor have been tested against the project's **limited
+ ## Test commands
+ 
+ ```bash
+-node res/ENTITLEMENT_TESTS.js
+-node res/ENTRA_CORE.test.js
+-node res/PS_GRAPH_TESTS.js
+-node res/PS_GRAPH_SAMPLES.test.js
+-node res/PS_TESTS.js
+-node res/PS_TESTS_v01.js
+-node res/ActiveDirectory.test.js
+-node res/AD_INTEGRATION_SMOKE.js
++node test/ENTITLEMENT_TESTS.js
++node test/ENTRA_CORE.test.js
++node test/PS_GRAPH_TESTS.js
++node test/PS_GRAPH_SAMPLES.test.js
++node test/PS_TESTS.js
++node test/PS_TESTS_v01.js
++node test/ActiveDirectory.test.js
++node test/AD_INTEGRATION_SMOKE.js
+ ```
+ 
+ ## Microsoft documentation
+diff --git a/docs/GRAPH_SCRIPT_LIBRARY.md b/docs/GRAPH_SCRIPT_LIBRARY.md
+index 15da836..6bd25ce 100644
+--- a/docs/GRAPH_SCRIPT_LIBRARY.md
++++ b/docs/GRAPH_SCRIPT_LIBRARY.md
+@@ -33,4 +33,4 @@ These scripts run against the fictional `northwind.example` tenant in `ENTRA_COR
+ - The PowerShell parser implements only a subset of PowerShell. Examples avoid unsupported constructs such as advanced `param`, splatting, `try/catch`, `ConvertTo-Json` and `ForEach-Object`.
+ - The AD and Entra datasets are **independent**; the comparison sample does not imply synchronization.
+ 
+-Run `node res/PS_GRAPH_SAMPLES.test.js` to check every example as actually embedded in `index.html`, including a simulated editor-click/Run interaction.
++Run `node test/PS_GRAPH_SAMPLES.test.js` to check every example as actually embedded in `index.html`, including a simulated editor-click/Run interaction.
+diff --git a/docs/IGAsim-Capability-Test-Checklist.md b/docs/IGAsim-Capability-Test-Checklist.md
+index 8519686..492ce77 100644
+--- a/docs/IGAsim-Capability-Test-Checklist.md
++++ b/docs/IGAsim-Capability-Test-Checklist.md
+@@ -1,8 +1,8 @@
+ # IGAsim — Enterprise IGA Capability & Test-Readiness Checklist
+ 
+ > **Baseline:** `flyingzebra/IGAsim` commit `a519417fc448a00eed9bc03ad18cc0ecd1e958d0` (`Access catalog + Access package CRUD`).
+-> **Source taxonomy:** [`docs/CAPABILITIES.md`](https://github.com/flyingzebra/IGAsim/blob/a519417fc448a00eed9bc03ad18cc0ecd1e958d0/docs/CAPABILITIES.md) — all eight capability domains and all 118 original IDs, preserving their labels.
+-> **Assessment date:** 2026-11-05. **Runtime:** offline browser simulation of fictional AD and Entra tenants, **not** a deployed enterprise IGA product.
++> **Source taxonomy:** [`docs/CAPABILITIES.md`](CAPABILITIES.md) — all eight capability domains and all 118 original IDs, preserving their labels.
++> **Assessment date:** 2026-11-05 (capability assessment); file-location migration: 2026-11-06. **Runtime:** offline browser simulation of fictional AD and Entra tenants, **not** a deployed enterprise IGA product.
+ 
+ ## How to use this checklist
+ 
+@@ -39,17 +39,17 @@
+ 
+ ## 1. Execute the existing regression suites
+ 
+-From the repository root (Node.js is needed for **tests only**, not for `index.html`):
++From the repository root (Node.js is needed for **tests only**, not for `index.html`). Run the complete suite via `node test/run-all.js`, or run individual files:
+ 
+ ```bash
+-node res/PS_TESTS.js
+-node res/PS_TESTS_v01.js
+-node res/ENTRA_CORE.test.js
+-node res/PS_GRAPH_TESTS.js
+-node res/PS_GRAPH_SAMPLES.test.js
+-node res/ENTITLEMENT_TESTS.js
+-node res/ActiveDirectory.test.js
+-node res/AD_INTEGRATION_SMOKE.js
++node test/PS_TESTS.js
++node test/PS_TESTS_v01.js
++node test/ENTRA_CORE.test.js
++node test/PS_GRAPH_TESTS.js
++node test/PS_GRAPH_SAMPLES.test.js
++node test/ENTITLEMENT_TESTS.js
++node test/ActiveDirectory.test.js
++node test/AD_INTEGRATION_SMOKE.js
+ ```
+ 
+ **Verified on the matching local code snapshot:** 50 + 18 + 53 + 54 + 17 + 32 + 33 + 14 = **271 checks passed**. This is code-level regression evidence, not acceptance of all 118 IGA capabilities.
+@@ -58,18 +58,18 @@ node res/AD_INTEGRATION_SMOKE.js
+ 
+ | ID | Scenario | Availability | Procedure | Expected result | Automated evidence | Related capabilities |
+ |---|---|---|---|---|---|---|
+-| **T01** | On-prem AD discovery | Ready (read-only) | Open `index.html` → AD users example, or run `Get-ADUser -Filter *` and `Get-ADGroup -Filter *`. | Results contain fictional AD users and groups. | `res/PS_TESTS.js`, `res/AD_INTEGRATION_SMOKE.js` | IDM-01 |
+-| **T02** | AD LDAP filters / transitive group queries | Ready (read-only) | Run `Get-ADGroupMember -Identity APP_Reporting -Recursive`, `Search-LDAP ...` and inspect `Get-LDAPQueryLog`. | Nested membership and LDAP/AD filters return matching fictional entries. | `res/PS_TESTS.js`, `res/AD_INTEGRATION_SMOKE.js` | ENT-01, ENT-02, ENT-12, ENT-13, ENT-15, ENT-16 |
+-| **T03** | AD account mutation and fixture reset | Ready (mutating) | Run **Modify AD** example (`Set-ADUser`, `Add-ADGroupMember`); inspect; select **Reset sandbox**. | Changes are visible immediately and original seed is restored after reset. | `res/PS_TESTS.js`, `res/AD_INTEGRATION_SMOKE.js` | IDM-06, IDM-08, ENT-17, PRO-02, PRO-03, PRO-06, PRO-08 |
+-| **T04** | Entra discovery / OData / paging | Ready (read-only) | Run **Tenant overview**, **IT and enabled users**, and **Paging and counts**, using `Connect-MgGraph` and `Get-MgUser`. | Users/groups filter and paginate; `$select` and counts follow the simulator subset. | `res/ENTRA_CORE.test.js`, `res/PS_GRAPH_TESTS.js`, `res/PS_GRAPH_SAMPLES.test.js` | IDM-01 |
+-| **T05** | Entra user CRUD and enabled state | Ready (mutating) | Run **Create cloud user**, **Enable cloud account**, **Graph PATCH update**; read modified users; reset. | Create/update/enable changes observable through `Get-MgUser` and raw Graph; reset undoes fixture changes. | `res/PS_GRAPH_TESTS.js`, `res/PS_GRAPH_SAMPLES.test.js` | IDM-04, IDM-05, IDM-06, IDM-08, PRO-01, PRO-02, PRO-03, PRO-08 |
+-| **T06** | Group CRUD / direct versus nested membership | Ready (mutating) | Run **Direct/nested groups**, **Create security group**, **Add/remove group member**. | Direct member changes work; transitive member reads expand nested groups; independent sessions do not leak state. | `res/PS_GRAPH_TESTS.js`, `res/ENTRA_CORE.test.js` | ENT-01, ENT-02, ENT-12, ENT-13, ENT-15, ENT-16, PRO-04, PRO-06 |
+-| **T07** | Cloud applications and service principals | Ready (read/write) | Run **Apps, principals, devices** and **Register application** examples. | Inventory and application/service-principal CRUD work within fictional tenant. | `res/ENTRA_CORE.test.js`, `res/PS_GRAPH_TESTS.js` | IDM-09, IDM-10 |
+-| **T08** | Access catalog list/CRUD | Ready (read/write) | Run **Catalog read/create/update/delete** scripts under Governance examples. | CRUD works; cannot mutate/delete protected General catalog; deletion of populated catalog rejected. | `res/ENTITLEMENT_TESTS.js`; `examples/graph/entitlement/{read,write}/govCatalog*.ps1` | RBM-01, RBM-11, GOV-02 |
+-| **T09** | Access package list/CRUD | Ready (read/write) | Run **Package read/create/update/delete**, and **Lifecycle** examples. | Package CRUD works, returned IDs are usable, and reset restores seed. | `res/ENTITLEMENT_TESTS.js`; `examples/graph/entitlement/{read,write}/govPackage*.ps1` | RBM-02, RBM-11, GOV-03 |
+-| **T10** | Catalog-to-package mapping and integrity | Ready (read-only / negative) | Read catalogs with `$expand=accessPackages`, packages with `$expand=catalog`, and try invalid catalog IDs. | A package references exactly one catalog; invalid refs and moving packages are rejected. | `res/ENTITLEMENT_TESTS.js`; `govCatalogRead.ps1`, `govPackageRead.ps1` | RBM-03, RBM-05 |
+-| **T11** | Negative behavior and reset isolation | Ready (negative) | Attempt unsupported Graph paths/fields, delete nonempty catalog, and instantiate separate tenants. | Structured error codes, no cross-instance writes and reset restoring fictional seeds. | `res/ENTITLEMENT_TESTS.js`, `res/ENTRA_CORE.test.js`, `res/PS_GRAPH_TESTS.js` | Session reset (not PRO-14) |
+-| **T12** | Browser script selection | Ready (simulated DOM) | Click examples in `index.html`; run; verify terminal result and category/buttons. | HTML inline JavaScript passes syntax; sample button fills editor and Run dispatches to simulator. | `res/PS_GRAPH_SAMPLES.test.js`, `res/ENTITLEMENT_TESTS.js` | UI delivery for all ready examples |
++| **T01** | On-prem AD discovery | Ready (read-only) | Open `index.html` → AD users example, or run `Get-ADUser -Filter *` and `Get-ADGroup -Filter *`. | Results contain fictional AD users and groups. | `test/PS_TESTS.js`, `test/AD_INTEGRATION_SMOKE.js` | IDM-01 |
++| **T02** | AD LDAP filters / transitive group queries | Ready (read-only) | Run `Get-ADGroupMember -Identity APP_Reporting -Recursive`, `Search-LDAP ...` and inspect `Get-LDAPQueryLog`. | Nested membership and LDAP/AD filters return matching fictional entries. | `test/PS_TESTS.js`, `test/AD_INTEGRATION_SMOKE.js` | ENT-01, ENT-02, ENT-12, ENT-13, ENT-15, ENT-16 |
++| **T03** | AD account mutation and fixture reset | Ready (mutating) | Run **Modify AD** example (`Set-ADUser`, `Add-ADGroupMember`); inspect; select **Reset sandbox**. | Changes are visible immediately and original seed is restored after reset. | `test/PS_TESTS.js`, `test/AD_INTEGRATION_SMOKE.js` | IDM-06, IDM-08, ENT-17, PRO-02, PRO-03, PRO-06, PRO-08 |
++| **T04** | Entra discovery / OData / paging | Ready (read-only) | Run **Tenant overview**, **IT and enabled users**, and **Paging and counts**, using `Connect-MgGraph` and `Get-MgUser`. | Users/groups filter and paginate; `$select` and counts follow the simulator subset. | `test/ENTRA_CORE.test.js`, `test/PS_GRAPH_TESTS.js`, `test/PS_GRAPH_SAMPLES.test.js` | IDM-01 |
++| **T05** | Entra user CRUD and enabled state | Ready (mutating) | Run **Create cloud user**, **Enable cloud account**, **Graph PATCH update**; read modified users; reset. | Create/update/enable changes observable through `Get-MgUser` and raw Graph; reset undoes fixture changes. | `test/PS_GRAPH_TESTS.js`, `test/PS_GRAPH_SAMPLES.test.js` | IDM-04, IDM-05, IDM-06, IDM-08, PRO-01, PRO-02, PRO-03, PRO-08 |
++| **T06** | Group CRUD / direct versus nested membership | Ready (mutating) | Run **Direct/nested groups**, **Create security group**, **Add/remove group member**. | Direct member changes work; transitive member reads expand nested groups; independent sessions do not leak state. | `test/PS_GRAPH_TESTS.js`, `test/ENTRA_CORE.test.js` | ENT-01, ENT-02, ENT-12, ENT-13, ENT-15, ENT-16, PRO-04, PRO-06 |
++| **T07** | Cloud applications and service principals | Ready (read/write) | Run **Apps, principals, devices** and **Register application** examples. | Inventory and application/service-principal CRUD work within fictional tenant. | `test/ENTRA_CORE.test.js`, `test/PS_GRAPH_TESTS.js` | IDM-09, IDM-10 |
++| **T08** | Access catalog list/CRUD | Ready (read/write) | Run **Catalog read/create/update/delete** scripts under Governance examples. | CRUD works; cannot mutate/delete protected General catalog; deletion of populated catalog rejected. | `test/ENTITLEMENT_TESTS.js`; `examples/graph/entitlement/{read,write}/govCatalog*.ps1` | RBM-01, RBM-11, GOV-02 |
++| **T09** | Access package list/CRUD | Ready (read/write) | Run **Package read/create/update/delete**, and **Lifecycle** examples. | Package CRUD works, returned IDs are usable, and reset restores seed. | `test/ENTITLEMENT_TESTS.js`; `examples/graph/entitlement/{read,write}/govPackage*.ps1` | RBM-02, RBM-11, GOV-03 |
++| **T10** | Catalog-to-package mapping and integrity | Ready (read-only / negative) | Read catalogs with `$expand=accessPackages`, packages with `$expand=catalog`, and try invalid catalog IDs. | A package references exactly one catalog; invalid refs and moving packages are rejected. | `test/ENTITLEMENT_TESTS.js`; `govCatalogRead.ps1`, `govPackageRead.ps1` | RBM-03, RBM-05 |
++| **T11** | Negative behavior and reset isolation | Ready (negative) | Attempt unsupported Graph paths/fields, delete nonempty catalog, and instantiate separate tenants. | Structured error codes, no cross-instance writes and reset restoring fictional seeds. | `test/ENTITLEMENT_TESTS.js`, `test/ENTRA_CORE.test.js`, `test/PS_GRAPH_TESTS.js` | Session reset (not PRO-14) |
++| **T12** | Browser script selection | Ready (simulated DOM) | Click examples in `index.html`; run; verify terminal result and category/buttons. | HTML inline JavaScript passes syntax; sample button fills editor and Run dispatches to simulator. | `test/PS_GRAPH_SAMPLES.test.js`, `test/ENTITLEMENT_TESTS.js` | UI delivery for all ready examples |
+ 
+ ### Manual execution checklist (intentionally unchecked)
+ 
+@@ -295,11 +295,11 @@ Notes / defect ID: ______
+ 
+ ## Source references
+ 
+-- [`docs/CAPABILITIES.md`](https://github.com/flyingzebra/IGAsim/blob/a519417fc448a00eed9bc03ad18cc0ecd1e958d0/docs/CAPABILITIES.md) — authoritative capability IDs and architecture target.
+-- [`docs/ENTITLEMENT_MANAGEMENT.md`](https://github.com/flyingzebra/IGAsim/blob/a519417fc448a00eed9bc03ad18cc0ecd1e958d0/docs/ENTITLEMENT_MANAGEMENT.md) — package/catalog metadata-only scope and safeguards.
+-- [`docs/PS_GRAPH_COMMANDS.md`](https://github.com/flyingzebra/IGAsim/blob/a519417fc448a00eed9bc03ad18cc0ecd1e958d0/docs/PS_GRAPH_COMMANDS.md) — supported simulated PowerShell Graph cmdlets.
+-- [`res/ENTITLEMENT_TESTS.js`](https://github.com/flyingzebra/IGAsim/blob/a519417fc448a00eed9bc03ad18cc0ecd1e958d0/res/ENTITLEMENT_TESTS.js) — catalog/package API and HTML example tests.
+-- [`index.html`](https://github.com/flyingzebra/IGAsim/blob/a519417fc448a00eed9bc03ad18cc0ecd1e958d0/index.html) — interactive in-browser editor and example buttons.
++- [`docs/CAPABILITIES.md`](CAPABILITIES.md) — authoritative capability IDs and architecture target.
++- [`docs/ENTITLEMENT_MANAGEMENT.md`](ENTITLEMENT_MANAGEMENT.md) — package/catalog metadata-only scope and safeguards.
++- [`docs/PS_GRAPH_COMMANDS.md`](PS_GRAPH_COMMANDS.md) — supported simulated PowerShell Graph cmdlets.
++- [`test/ENTITLEMENT_TESTS.js`](../test/ENTITLEMENT_TESTS.js) — catalog/package API and HTML example tests.
++- [`index.html`](../index.html) — interactive in-browser editor and example buttons.
+ 
+ ---
+-**Last assessed:** 2026-11-05; baseline commit `a519417`. Reassess statuses and rerun tests after every structural change. Do not equate feature-level simulation with full IGA production readiness.
++**Last assessed:** 2026-11-05; test-directory migration: 2026-11-06; baseline commit `a519417`. Reassess statuses and rerun tests after every structural change. Do not equate feature-level simulation with full IGA production readiness.
+diff --git a/docs/PS_CONSTRUCTOR_ARCHITECTURE.md b/docs/PS_CONSTRUCTOR_ARCHITECTURE.md
+index 25c5bde..699225c 100644
+--- a/docs/PS_CONSTRUCTOR_ARCHITECTURE.md
++++ b/docs/PS_CONSTRUCTOR_ARCHITECTURE.md
+@@ -75,10 +75,10 @@ Load the Graph backend and its command provider before the PowerShell execution
+ The engine is browser-first and does not have `module.exports`. The Node regression tests now load the same classic scripts using `node:vm`; they do not require the engine files as CommonJS modules.
+ 
+ ```bash
+-node res/PS_TESTS.js
+-node res/PS_TESTS_v01.js
+-node res/PS_GRAPH_TESTS.js
+-node res/ENTRA_CORE.test.js
++node test/PS_TESTS.js
++node test/PS_TESTS_v01.js
++node test/PS_GRAPH_TESTS.js
++node test/ENTRA_CORE.test.js
+ ```
+ 
+ Expected: **50** v0.2 tests and **18** v0.1 tests. The additional v0.2 tests exercise the constructor layout, module loading in a browser-like context, independent instances, native error behavior, and the terminal adapter.
+diff --git a/docs/PS_GRAPH_COMMANDS.md b/docs/PS_GRAPH_COMMANDS.md
+index 1968901..3a6cced 100644
+--- a/docs/PS_GRAPH_COMMANDS.md
++++ b/docs/PS_GRAPH_COMMANDS.md
+@@ -103,12 +103,12 @@ All writes are made through `ENTRA_CORE.Graph()` and are visible immediately to
+ Run from the repository root:
+ 
+ ```bash
+-node res/PS_GRAPH_TESTS.js
+-node res/PS_TESTS.js
+-node res/PS_TESTS_v01.js
+-node res/ENTRA_CORE.test.js
+-node res/ActiveDirectory.test.js
+-node res/AD_INTEGRATION_SMOKE.js
++node test/PS_GRAPH_TESTS.js
++node test/PS_TESTS.js
++node test/PS_TESTS_v01.js
++node test/ENTRA_CORE.test.js
++node test/ActiveDirectory.test.js
++node test/AD_INTEGRATION_SMOKE.js
+ ```
+ 
+ `PS_GRAPH_TESTS.js` covers session behavior, routing to Graph, query/filter/paging, CRUD, group references, failure cases, reset, independent instances, classic browser scripts and continued on-prem AD support. A fake-DOM/terminal smoke test also verifies that the HTML Entra example button runs through the adapter. A full graphical browser check still needs to be done locally.
+diff --git a/docs/README-ActiveDirectoryJS.md b/docs/README-ActiveDirectoryJS.md
+index 2664cd1..fe8f525 100644
+--- a/docs/README-ActiveDirectoryJS.md
++++ b/docs/README-ActiveDirectoryJS.md
+@@ -6,7 +6,7 @@ An offline, standalone, JavaScript **LDAP API simulator** backed by an inline Ja
+ 
+ - `res/AD_CORE.js` — public `function ActiveDirectory()`; both `this.DB = {...}` and `this.LDAP = function(...) {...}` are declared inside the constructor.
+ - `tools/ActiveDirectory-demo.html` — offline browser console (loads only `../res/AD_CORE.js` through a standard `<script>` tag).
+-- `res/ActiveDirectory.test.js` — Node.js regression checks.
++- `test/ActiveDirectory.test.js` — Node.js regression checks.
+ - `tools/ActiveDirectory.sample.json` — optional reference snapshot only; not fetched, imported or used at runtime.
+ 
+ Open **`tools/ActiveDirectory-demo.html`** directly in a browser, even from `file://`. There is no asynchronous JSON loading, XHR or `fetch()`, so no CORS issue. The optional **Inspect inline DB** button reveals the active dataset; **Export** downloads a snapshot of in-memory changes. Reset constructs a new object with a clean copy of the literal.
+@@ -151,11 +151,11 @@ This is **not** a real LDAPv3 server or a security boundary. Missing features in
+ With Node.js installed:
+ 
+ ```bash
+-node res/ActiveDirectory.test.js
++node test/ActiveDirectory.test.js
+ ```
+ 
+ Expected: `33 tests passed.`
+ 
+ ### Node test runner without CommonJS in the emulator
+ 
+-`res/ActiveDirectory.test.js` uses Node's `vm.runInThisContext()` to load the browser script into a test context. `res/AD_CORE.js` itself contains **no** `require()`, `module.exports`, `export`, or wrapper. Browser code uses the global `ActiveDirectory` directly with a classic script tag.
++`test/ActiveDirectory.test.js` uses Node's `vm.runInThisContext()` to load the browser script into a test context. `res/AD_CORE.js` itself contains **no** `require()`, `module.exports`, `export`, or wrapper. Browser code uses the global `ActiveDirectory` directly with a classic script tag.
+diff --git a/docs/README-ENTRA_CORE.md b/docs/README-ENTRA_CORE.md
+index 5e0304e..d7a131c 100644
+--- a/docs/README-ENTRA_CORE.md
++++ b/docs/README-ENTRA_CORE.md
+@@ -137,7 +137,7 @@ From the repository root:
+ 
+ ```bash
+ node --check res/ENTRA_CORE.js
+-node res/ENTRA_CORE.test.js
++node test/ENTRA_CORE.test.js
+ ```
+ 
+ The test suite covers global script loading, schema and state isolation, OData queries, pagination, CRUD, relationship operations, error envelopes, and simulated session/reset behavior. Node is used **only** for testing; browser runtime has no dependencies.
+diff --git a/res/AD_INTEGRATION_SMOKE.js b/test/AD_INTEGRATION_SMOKE.js
+similarity index 97%
+rename from res/AD_INTEGRATION_SMOKE.js
+rename to test/AD_INTEGRATION_SMOKE.js
+index 5837f1f..29c49a9 100644
+--- a/res/AD_INTEGRATION_SMOKE.js
++++ b/test/AD_INTEGRATION_SMOKE.js
+@@ -1,6 +1,6 @@
+ 'use strict';
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),assert=require('node:assert/strict');
+-for(const name of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js'])vm.runInThisContext(fs.readFileSync(path.join(__dirname,name),'utf8'),{filename:name});
++for(const name of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js'])vm.runInThisContext(fs.readFileSync(path.join(__dirname,'..','res',name),'utf8'),{filename:name});
+ const {PowerShellSimulator}=globalThis.PowerShellJS;
+ (async()=>{
+ let tests=0;function check(x){tests++;console.log('PASS '+x)}
+diff --git a/res/ActiveDirectory.test.js b/test/ActiveDirectory.test.js
+similarity index 98%
+rename from res/ActiveDirectory.test.js
+rename to test/ActiveDirectory.test.js
+index 43bd96a..faaf2ae 100644
+--- a/res/ActiveDirectory.test.js
++++ b/test/ActiveDirectory.test.js
+@@ -1,9 +1,9 @@
+-/* Run: node ActiveDirectory.test.js */
++/* Run: node test/ActiveDirectory.test.js */
+ const assert = require('node:assert/strict');
+ const fs = require('node:fs');
+ const vm = require('node:vm');
+ const path = require('node:path');
+-const adFile = path.join(__dirname, 'AD_CORE.js');
++const adFile = path.join(__dirname, '..', 'res', 'AD_CORE.js');
+ // A classic browser script: no CommonJS wrapper or exports in the emulator.
+ const ActiveDirectory = vm.runInThisContext(fs.readFileSync(adFile, 'utf8') + '\nActiveDirectory;', { filename: adFile });
+ const ROOT = 'DC=contoso,DC=local';
+diff --git a/res/ENTITLEMENT_TESTS.js b/test/ENTITLEMENT_TESTS.js
+similarity index 99%
+rename from res/ENTITLEMENT_TESTS.js
+rename to test/ENTITLEMENT_TESTS.js
+index 49570b5..69d3af8 100644
+--- a/res/ENTITLEMENT_TESTS.js
++++ b/test/ENTITLEMENT_TESTS.js
+@@ -1,12 +1,12 @@
+ /* IGAsim entitlement-management regression: Graph API, PowerShell examples and HTML.
+- * Run: node res/ENTITLEMENT_TESTS.js
++ * Run: node test/ENTITLEMENT_TESTS.js
+  */
+ 'use strict';
+ const assert = require('node:assert/strict');
+ const fs = require('node:fs');
+ const path = require('node:path');
+ const vm = require('node:vm');
+-const root = __dirname;
++const root = path.join(__dirname, '..', 'res');
+ const html = fs.readFileSync(path.join(root, '..', 'index.html'), 'utf8');
+ const scripts = ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js',
+     'PS_GRAPH_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'];
+diff --git a/res/ENTRA_CORE.test.js b/test/ENTRA_CORE.test.js
+similarity index 99%
+rename from res/ENTRA_CORE.test.js
+rename to test/ENTRA_CORE.test.js
+index 34ad3dd..96683fc 100644
+--- a/res/ENTRA_CORE.test.js
++++ b/test/ENTRA_CORE.test.js
+@@ -1,11 +1,11 @@
+-/* ENTRA_CORE v0.1 standalone regression suite. Run: node res/ENTRA_CORE.test.js */
++/* ENTRA_CORE v0.1 standalone regression suite. Run: node test/ENTRA_CORE.test.js */
+ 'use strict';
+ 
+ const assert = require('node:assert/strict');
+ const fs = require('node:fs');
+ const path = require('node:path');
+ const vm = require('node:vm');
+-const source = fs.readFileSync(path.join(__dirname, 'ENTRA_CORE.js'), 'utf8');
++const source = fs.readFileSync(path.join(__dirname, '..', 'res', 'ENTRA_CORE.js'), 'utf8');
+ const sandbox = vm.createContext({});
+ vm.runInContext(source, sandbox, { filename: 'ENTRA_CORE.js' });
+ const EntraDirectory = sandbox.EntraDirectory;
+diff --git a/res/PS_GRAPH_SAMPLES.test.js b/test/PS_GRAPH_SAMPLES.test.js
+similarity index 98%
+rename from res/PS_GRAPH_SAMPLES.test.js
+rename to test/PS_GRAPH_SAMPLES.test.js
+index 141c84b..7cd84d7 100644
+--- a/res/PS_GRAPH_SAMPLES.test.js
++++ b/test/PS_GRAPH_SAMPLES.test.js
+@@ -1,5 +1,5 @@
+ /* Tests the actual scripts selectable in index.html, not rewritten approximations.
+- * Run: node res/PS_GRAPH_SAMPLES.test.js
++ * Run: node test/PS_GRAPH_SAMPLES.test.js
+  */
+ 'use strict';
+ const assert = require('node:assert/strict');
+@@ -7,7 +7,7 @@ const fs = require('node:fs');
+ const path = require('node:path');
+ const vm = require('node:vm');
+ 
+-const root = __dirname;
++const root = path.join(__dirname, '..', 'res');
+ const html = fs.readFileSync(path.join(root, '..', 'index.html'), 'utf8');
+ const jsFiles = ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js',
+     'ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'];
+diff --git a/res/PS_GRAPH_TESTS.js b/test/PS_GRAPH_TESTS.js
+similarity index 99%
+rename from res/PS_GRAPH_TESTS.js
+rename to test/PS_GRAPH_TESTS.js
+index eeeb412..b4de768 100644
+--- a/res/PS_GRAPH_TESTS.js
++++ b/test/PS_GRAPH_TESTS.js
+@@ -1,11 +1,11 @@
+-/* PowerShellJS Graph command regression tests. Run: node res/PS_GRAPH_TESTS.js */
++/* PowerShellJS Graph command regression tests. Run: node test/PS_GRAPH_TESTS.js */
+ 'use strict';
+ const assert = require('node:assert/strict');
+ const fs = require('node:fs');
+ const path = require('node:path');
+ const vm = require('node:vm');
+ 
+-const root = __dirname;
++const root = path.join(__dirname, '..', 'res');
+ const files = ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js',
+     'PS_GRAPH_COMMANDS.js','PS_CORE.js'];
+ for (const filename of files)
+diff --git a/res/PS_TESTS.js b/test/PS_TESTS.js
+similarity index 98%
+rename from res/PS_TESTS.js
+rename to test/PS_TESTS.js
+index 3328420..204af25 100644
+--- a/res/PS_TESTS.js
++++ b/test/PS_TESTS.js
+@@ -1,4 +1,4 @@
+-/* Node used only to verify the browser-first engine. Run: node PS_TESTS.js */
++/* Node used only to verify the browser-first engine. Run: node test/PS_TESTS.js */
+ 'use strict';
+ const assert = require('node:assert/strict');
+ const fs = require('node:fs');
+@@ -6,7 +6,7 @@ const path = require('node:path');
+ const vm = require('node:vm');
+ for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js'])
+ {
+-    const filepath = path.join(__dirname, filename);
++    const filepath = path.join(__dirname, '..', 'res', filename);
+     vm.runInThisContext(fs.readFileSync(filepath, 'utf8'), { filename: filepath });
+ }
+ const { PowerShellSimulator, parse, VirtualFS } = globalThis.PowerShellJS;
+@@ -264,7 +264,7 @@ async function runTests()
+     {
+         for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'])
+         {
+-            const source = fs.readFileSync(path.join(__dirname, filename), 'utf8');
++            const source = fs.readFileSync(path.join(__dirname, '..', 'res', filename), 'utf8');
+             assert.doesNotMatch(source, /\bclass\s+[A-Za-z_]/);
+             assert.doesNotMatch(source, /^\s*\(function\s*\(/m);
+             assert.doesNotMatch(source, /module\.exports|\brequire\s*\([\s\x27\x22]/);
+@@ -323,7 +323,7 @@ async function runTests()
+         const browser = vm.createContext({ console, TextEncoder, TextDecoder });
+         for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'])
+         {
+-            const filepath = path.join(__dirname, filename);
++            const filepath = path.join(__dirname, '..', 'res', filename);
+             vm.runInContext(fs.readFileSync(filepath, 'utf8'), browser, { filename: filepath });
+         }
+         assert.equal(typeof browser.PowerShellJS.PowerShellSimulator, 'function');
+@@ -335,7 +335,7 @@ async function runTests()
+     });
+     await test('Terminal adapter and interchangeable engine stay functional', async () =>
+     {
+-        const loader = fs.readFileSync(path.join(__dirname, 'PS_TERMINAL_ADAPTER.js'), 'utf8');
++        const loader = fs.readFileSync(path.join(__dirname, '..', 'res', 'PS_TERMINAL_ADAPTER.js'), 'utf8');
+         const browser = vm.createContext({ console, TextEncoder, TextDecoder });
+         vm.runInContext(loader, browser);
+         const prompts = [], outputs = [], events = [];
+diff --git a/res/PS_TESTS_v01.js b/test/PS_TESTS_v01.js
+similarity index 96%
+rename from res/PS_TESTS_v01.js
+rename to test/PS_TESTS_v01.js
+index 3441482..51bb0cf 100644
+--- a/res/PS_TESTS_v01.js
++++ b/test/PS_TESTS_v01.js
+@@ -6,7 +6,7 @@ const path = require('node:path');
+ const vm = require('node:vm');
+ for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js'])
+ {
+-    const filepath = path.join(__dirname, filename);
++    const filepath = path.join(__dirname, '..', 'res', filename);
+     vm.runInThisContext(fs.readFileSync(filepath, 'utf8'), { filename: filepath });
+ }
+ const { PowerShellSimulator, parse, VirtualFS } = globalThis.PowerShellJS;
+@@ -61,6 +61,7 @@ async function runTests()
+     await test('No changes to actual host filesystem', () =>
+     {
+         const fs = require('node:fs');
++        assert.equal(fs.existsSync(require('node:path').join(__dirname, '..', 'res', 'notes.txt')), false);
+         assert.equal(fs.existsSync(require('node:path').join(__dirname, 'notes.txt')), false);
+     });
+     await test('Folder listing produces objects', async () =>
+diff --git a/test/README.md b/test/README.md
+new file mode 100644
+index 0000000..3ca88a3
+--- /dev/null
++++ b/test/README.md
+@@ -0,0 +1,24 @@
++# IGAsim regression tests
++
++The `test/` directory contains **Node-only** regression suites. Browser runtime JavaScript, CSS and simulation data remain in `res/`, and the application still opens offline using `index.html`.
++
++From the repository root:
++
++```bash
++node test/run-all.js
++```
++
++Run an individual suite with `node test/PS_TESTS.js`, etc. The runner uses the Node executable and resolves test paths independently of the current working directory. Each suite loads JavaScript from `../res/` using its own file location, not the shell's current directory. The UI-oriented tests also load `../index.html` and `../examples/`.
++
++| Suite | Covers |
++|---|---|
++| `PS_TESTS.js` | PowerShell v0.2 parser, AD commands, session and terminal |
++| `PS_TESTS_v01.js` | Legacy PowerShell v0.1 regression |
++| `ActiveDirectory.test.js` | Standalone LDAP engine (`AD_CORE.js`) |
++| `AD_INTEGRATION_SMOKE.js` | Shared LDAP/PowerShell directory integration |
++| `ENTRA_CORE.test.js` | Microsoft Graph-style Entra core |
++| `PS_GRAPH_TESTS.js` | Graph PowerShell cmdlets and DOM harness |
++| `PS_GRAPH_SAMPLES.test.js` | Embedded Graph examples and HTML script selection |
++| `ENTITLEMENT_TESTS.js` | Catalog/package CRUD and entitlement examples |
++
++`test/run-all.js` runs all eight suites and returns a nonzero exit code if any suite fails. These tests **do not replace** interactive browser verification and do not use real Entra ID, LDAP or SAP services.
+diff --git a/test/run-all.js b/test/run-all.js
+new file mode 100644
+index 0000000..bd3ae9e
+--- /dev/null
++++ b/test/run-all.js
+@@ -0,0 +1,40 @@
++/* Run all IGAsim regression suites: node test/run-all.js (from any working directory). */
++'use strict';
++
++const path = require('node:path');
++const { spawnSync } = require('node:child_process');
++
++const suites = [
++    'PS_TESTS.js',
++    'PS_TESTS_v01.js',
++    'ActiveDirectory.test.js',
++    'AD_INTEGRATION_SMOKE.js',
++    'ENTRA_CORE.test.js',
++    'PS_GRAPH_TESTS.js',
++    'PS_GRAPH_SAMPLES.test.js',
++    'ENTITLEMENT_TESTS.js'
++];
++
++let failures = 0;
++for (const suite of suites)
++{
++    console.log('\n=== ' + suite + ' ===');
++    const result = spawnSync(process.execPath, [path.join(__dirname, suite)], {
++        stdio: 'inherit'
++    });
++    if (result.error || result.status !== 0)
++    {
++        failures++;
++        console.error('FAILED: ' + suite + (result.error ? ': ' + result.error.message : ''));
++    }
++}
++
++if (failures)
++{
++    console.error('\n' + failures + ' of ' + suites.length + ' suites failed.');
++    process.exitCode = 1;
++}
++else
++{
++    console.log('\nAll ' + suites.length + ' regression suites passed.');
++}

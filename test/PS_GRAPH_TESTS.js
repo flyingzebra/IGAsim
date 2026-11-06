@@ -1,11 +1,11 @@
-/* PowerShellJS Graph command regression tests. Run: node res/PS_GRAPH_TESTS.js */
+/* PowerShellJS Graph command regression tests. Run: node test/PS_GRAPH_TESTS.js */
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const root = __dirname;
+const root = path.join(__dirname, '..', 'res');
 const files = ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js',
     'PS_GRAPH_COMMANDS.js','PS_CORE.js'];
 for (const filename of files)

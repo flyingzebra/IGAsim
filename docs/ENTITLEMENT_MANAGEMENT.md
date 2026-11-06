@@ -86,14 +86,14 @@ The examples in the HTML editor have been tested against the project's **limited
 ## Test commands
 
 ```bash
-node res/ENTITLEMENT_TESTS.js
-node res/ENTRA_CORE.test.js
-node res/PS_GRAPH_TESTS.js
-node res/PS_GRAPH_SAMPLES.test.js
-node res/PS_TESTS.js
-node res/PS_TESTS_v01.js
-node res/ActiveDirectory.test.js
-node res/AD_INTEGRATION_SMOKE.js
+node test/ENTITLEMENT_TESTS.js
+node test/ENTRA_CORE.test.js
+node test/PS_GRAPH_TESTS.js
+node test/PS_GRAPH_SAMPLES.test.js
+node test/PS_TESTS.js
+node test/PS_TESTS_v01.js
+node test/ActiveDirectory.test.js
+node test/AD_INTEGRATION_SMOKE.js
 ```
 
 ## Microsoft documentation

@@ -103,12 +103,12 @@ All writes are made through `ENTRA_CORE.Graph()` and are visible immediately to 
 Run from the repository root:
 
 ```bash
-node res/PS_GRAPH_TESTS.js
-node res/PS_TESTS.js
-node res/PS_TESTS_v01.js
-node res/ENTRA_CORE.test.js
-node res/ActiveDirectory.test.js
-node res/AD_INTEGRATION_SMOKE.js
+node test/PS_GRAPH_TESTS.js
+node test/PS_TESTS.js
+node test/PS_TESTS_v01.js
+node test/ENTRA_CORE.test.js
+node test/ActiveDirectory.test.js
+node test/AD_INTEGRATION_SMOKE.js
 ```
 
 `PS_GRAPH_TESTS.js` covers session behavior, routing to Graph, query/filter/paging, CRUD, group references, failure cases, reset, independent instances, classic browser scripts and continued on-prem AD support. A fake-DOM/terminal smoke test also verifies that the HTML Entra example button runs through the adapter. A full graphical browser check still needs to be done locally.

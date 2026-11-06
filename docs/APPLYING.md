@@ -2,10 +2,12 @@
 
 Base revision: `46288fe657efc58a10cd8249b01351fa2501d19a`.
 
+**Historical guide:** This documents an earlier patch. On the original revision, the test initially lived under `res/`; in the current IGAsim tree, its permanent location is `test/ActiveDirectory.test.js`. Apply the current test-directory migration before running the command shown below.
+
 Changes are limited to four files in their existing repository subdirectories:
 
 - `res/ActiveDirectory.js`: declares `this.DB = {...}` (11 fictional directory entries) and `this.LDAP = function(request,params){...}` directly inside `function ActiveDirectory()`. Retains existing calls and independent instances. No file reads, external JSON fetches, network calls, or CORS requirements.
-- `res/ActiveDirectory.test.js`: extends the regression suite to 32 checks.
+- `test/ActiveDirectory.test.js`: extends the regression suite to 32 checks.
 - `tools/ActiveDirectory-demo.html`: offline, relative script import and inline dataset inspector; no JSON file import or fetch.
 - `docs/README-ActiveDirectoryJS.md`: documents the inline-only default, API, paths and offline behavior.
 
@@ -16,7 +18,7 @@ git checkout 46288fe657efc58a10cd8249b01351fa2501d19a
 # (optional) git switch -c refactor/inline-active-directory-ldap
 git apply --check IGAsim-inline-ad.patch
 git apply IGAsim-inline-ad.patch
-node res/ActiveDirectory.test.js
+node test/ActiveDirectory.test.js
 # commit changes after verification
 ```
 

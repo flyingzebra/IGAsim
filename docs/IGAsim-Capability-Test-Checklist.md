@@ -1,8 +1,8 @@
 # IGAsim — Enterprise IGA Capability & Test-Readiness Checklist
 
 > **Baseline:** `flyingzebra/IGAsim` commit `a519417fc448a00eed9bc03ad18cc0ecd1e958d0` (`Access catalog + Access package CRUD`).
-> **Source taxonomy:** [`docs/CAPABILITIES.md`](https://github.com/flyingzebra/IGAsim/blob/a519417fc448a00eed9bc03ad18cc0ecd1e958d0/docs/CAPABILITIES.md) — all eight capability domains and all 118 original IDs, preserving their labels.
-> **Assessment date:** 2026-11-05. **Runtime:** offline browser simulation of fictional AD and Entra tenants, **not** a deployed enterprise IGA product.
+> **Source taxonomy:** [`docs/CAPABILITIES.md`](CAPABILITIES.md) — all eight capability domains and all 118 original IDs, preserving their labels.
+> **Assessment date:** 2026-11-05 (capability assessment); file-location migration: 2026-11-06. **Runtime:** offline browser simulation of fictional AD and Entra tenants, **not** a deployed enterprise IGA product.
 
 ## How to use this checklist
 
@@ -39,17 +39,17 @@
 
 ## 1. Execute the existing regression suites
 
-From the repository root (Node.js is needed for **tests only**, not for `index.html`):
+From the repository root (Node.js is needed for **tests only**, not for `index.html`). Run the complete suite via `node test/run-all.js`, or run individual files:
 
 ```bash
-node res/PS_TESTS.js
-node res/PS_TESTS_v01.js
-node res/ENTRA_CORE.test.js
-node res/PS_GRAPH_TESTS.js
-node res/PS_GRAPH_SAMPLES.test.js
-node res/ENTITLEMENT_TESTS.js
-node res/ActiveDirectory.test.js
-node res/AD_INTEGRATION_SMOKE.js
+node test/PS_TESTS.js
+node test/PS_TESTS_v01.js
+node test/ENTRA_CORE.test.js
+node test/PS_GRAPH_TESTS.js
+node test/PS_GRAPH_SAMPLES.test.js
+node test/ENTITLEMENT_TESTS.js
+node test/ActiveDirectory.test.js
+node test/AD_INTEGRATION_SMOKE.js
 ```
 
 **Verified on the matching local code snapshot:** 50 + 18 + 53 + 54 + 17 + 32 + 33 + 14 = **271 checks passed**. This is code-level regression evidence, not acceptance of all 118 IGA capabilities.
@@ -58,18 +58,18 @@ node res/AD_INTEGRATION_SMOKE.js
 
 | ID | Scenario | Availability | Procedure | Expected result | Automated evidence | Related capabilities |
 |---|---|---|---|---|---|---|
-| **T01** | On-prem AD discovery | Ready (read-only) | Open `index.html` → AD users example, or run `Get-ADUser -Filter *` and `Get-ADGroup -Filter *`. | Results contain fictional AD users and groups. | `res/PS_TESTS.js`, `res/AD_INTEGRATION_SMOKE.js` | IDM-01 |
-| **T02** | AD LDAP filters / transitive group queries | Ready (read-only) | Run `Get-ADGroupMember -Identity APP_Reporting -Recursive`, `Search-LDAP ...` and inspect `Get-LDAPQueryLog`. | Nested membership and LDAP/AD filters return matching fictional entries. | `res/PS_TESTS.js`, `res/AD_INTEGRATION_SMOKE.js` | ENT-01, ENT-02, ENT-12, ENT-13, ENT-15, ENT-16 |
-| **T03** | AD account mutation and fixture reset | Ready (mutating) | Run **Modify AD** example (`Set-ADUser`, `Add-ADGroupMember`); inspect; select **Reset sandbox**. | Changes are visible immediately and original seed is restored after reset. | `res/PS_TESTS.js`, `res/AD_INTEGRATION_SMOKE.js` | IDM-06, IDM-08, ENT-17, PRO-02, PRO-03, PRO-06, PRO-08 |
-| **T04** | Entra discovery / OData / paging | Ready (read-only) | Run **Tenant overview**, **IT and enabled users**, and **Paging and counts**, using `Connect-MgGraph` and `Get-MgUser`. | Users/groups filter and paginate; `$select` and counts follow the simulator subset. | `res/ENTRA_CORE.test.js`, `res/PS_GRAPH_TESTS.js`, `res/PS_GRAPH_SAMPLES.test.js` | IDM-01 |
-| **T05** | Entra user CRUD and enabled state | Ready (mutating) | Run **Create cloud user**, **Enable cloud account**, **Graph PATCH update**; read modified users; reset. | Create/update/enable changes observable through `Get-MgUser` and raw Graph; reset undoes fixture changes. | `res/PS_GRAPH_TESTS.js`, `res/PS_GRAPH_SAMPLES.test.js` | IDM-04, IDM-05, IDM-06, IDM-08, PRO-01, PRO-02, PRO-03, PRO-08 |
-| **T06** | Group CRUD / direct versus nested membership | Ready (mutating) | Run **Direct/nested groups**, **Create security group**, **Add/remove group member**. | Direct member changes work; transitive member reads expand nested groups; independent sessions do not leak state. | `res/PS_GRAPH_TESTS.js`, `res/ENTRA_CORE.test.js` | ENT-01, ENT-02, ENT-12, ENT-13, ENT-15, ENT-16, PRO-04, PRO-06 |
-| **T07** | Cloud applications and service principals | Ready (read/write) | Run **Apps, principals, devices** and **Register application** examples. | Inventory and application/service-principal CRUD work within fictional tenant. | `res/ENTRA_CORE.test.js`, `res/PS_GRAPH_TESTS.js` | IDM-09, IDM-10 |
-| **T08** | Access catalog list/CRUD | Ready (read/write) | Run **Catalog read/create/update/delete** scripts under Governance examples. | CRUD works; cannot mutate/delete protected General catalog; deletion of populated catalog rejected. | `res/ENTITLEMENT_TESTS.js`; `examples/graph/entitlement/{read,write}/govCatalog*.ps1` | RBM-01, RBM-11, GOV-02 |
-| **T09** | Access package list/CRUD | Ready (read/write) | Run **Package read/create/update/delete**, and **Lifecycle** examples. | Package CRUD works, returned IDs are usable, and reset restores seed. | `res/ENTITLEMENT_TESTS.js`; `examples/graph/entitlement/{read,write}/govPackage*.ps1` | RBM-02, RBM-11, GOV-03 |
-| **T10** | Catalog-to-package mapping and integrity | Ready (read-only / negative) | Read catalogs with `$expand=accessPackages`, packages with `$expand=catalog`, and try invalid catalog IDs. | A package references exactly one catalog; invalid refs and moving packages are rejected. | `res/ENTITLEMENT_TESTS.js`; `govCatalogRead.ps1`, `govPackageRead.ps1` | RBM-03, RBM-05 |
-| **T11** | Negative behavior and reset isolation | Ready (negative) | Attempt unsupported Graph paths/fields, delete nonempty catalog, and instantiate separate tenants. | Structured error codes, no cross-instance writes and reset restoring fictional seeds. | `res/ENTITLEMENT_TESTS.js`, `res/ENTRA_CORE.test.js`, `res/PS_GRAPH_TESTS.js` | Session reset (not PRO-14) |
-| **T12** | Browser script selection | Ready (simulated DOM) | Click examples in `index.html`; run; verify terminal result and category/buttons. | HTML inline JavaScript passes syntax; sample button fills editor and Run dispatches to simulator. | `res/PS_GRAPH_SAMPLES.test.js`, `res/ENTITLEMENT_TESTS.js` | UI delivery for all ready examples |
+| **T01** | On-prem AD discovery | Ready (read-only) | Open `index.html` → AD users example, or run `Get-ADUser -Filter *` and `Get-ADGroup -Filter *`. | Results contain fictional AD users and groups. | `test/PS_TESTS.js`, `test/AD_INTEGRATION_SMOKE.js` | IDM-01 |
+| **T02** | AD LDAP filters / transitive group queries | Ready (read-only) | Run `Get-ADGroupMember -Identity APP_Reporting -Recursive`, `Search-LDAP ...` and inspect `Get-LDAPQueryLog`. | Nested membership and LDAP/AD filters return matching fictional entries. | `test/PS_TESTS.js`, `test/AD_INTEGRATION_SMOKE.js` | ENT-01, ENT-02, ENT-12, ENT-13, ENT-15, ENT-16 |
+| **T03** | AD account mutation and fixture reset | Ready (mutating) | Run **Modify AD** example (`Set-ADUser`, `Add-ADGroupMember`); inspect; select **Reset sandbox**. | Changes are visible immediately and original seed is restored after reset. | `test/PS_TESTS.js`, `test/AD_INTEGRATION_SMOKE.js` | IDM-06, IDM-08, ENT-17, PRO-02, PRO-03, PRO-06, PRO-08 |
+| **T04** | Entra discovery / OData / paging | Ready (read-only) | Run **Tenant overview**, **IT and enabled users**, and **Paging and counts**, using `Connect-MgGraph` and `Get-MgUser`. | Users/groups filter and paginate; `$select` and counts follow the simulator subset. | `test/ENTRA_CORE.test.js`, `test/PS_GRAPH_TESTS.js`, `test/PS_GRAPH_SAMPLES.test.js` | IDM-01 |
+| **T05** | Entra user CRUD and enabled state | Ready (mutating) | Run **Create cloud user**, **Enable cloud account**, **Graph PATCH update**; read modified users; reset. | Create/update/enable changes observable through `Get-MgUser` and raw Graph; reset undoes fixture changes. | `test/PS_GRAPH_TESTS.js`, `test/PS_GRAPH_SAMPLES.test.js` | IDM-04, IDM-05, IDM-06, IDM-08, PRO-01, PRO-02, PRO-03, PRO-08 |
+| **T06** | Group CRUD / direct versus nested membership | Ready (mutating) | Run **Direct/nested groups**, **Create security group**, **Add/remove group member**. | Direct member changes work; transitive member reads expand nested groups; independent sessions do not leak state. | `test/PS_GRAPH_TESTS.js`, `test/ENTRA_CORE.test.js` | ENT-01, ENT-02, ENT-12, ENT-13, ENT-15, ENT-16, PRO-04, PRO-06 |
+| **T07** | Cloud applications and service principals | Ready (read/write) | Run **Apps, principals, devices** and **Register application** examples. | Inventory and application/service-principal CRUD work within fictional tenant. | `test/ENTRA_CORE.test.js`, `test/PS_GRAPH_TESTS.js` | IDM-09, IDM-10 |
+| **T08** | Access catalog list/CRUD | Ready (read/write) | Run **Catalog read/create/update/delete** scripts under Governance examples. | CRUD works; cannot mutate/delete protected General catalog; deletion of populated catalog rejected. | `test/ENTITLEMENT_TESTS.js`; `examples/graph/entitlement/{read,write}/govCatalog*.ps1` | RBM-01, RBM-11, GOV-02 |
+| **T09** | Access package list/CRUD | Ready (read/write) | Run **Package read/create/update/delete**, and **Lifecycle** examples. | Package CRUD works, returned IDs are usable, and reset restores seed. | `test/ENTITLEMENT_TESTS.js`; `examples/graph/entitlement/{read,write}/govPackage*.ps1` | RBM-02, RBM-11, GOV-03 |
+| **T10** | Catalog-to-package mapping and integrity | Ready (read-only / negative) | Read catalogs with `$expand=accessPackages`, packages with `$expand=catalog`, and try invalid catalog IDs. | A package references exactly one catalog; invalid refs and moving packages are rejected. | `test/ENTITLEMENT_TESTS.js`; `govCatalogRead.ps1`, `govPackageRead.ps1` | RBM-03, RBM-05 |
+| **T11** | Negative behavior and reset isolation | Ready (negative) | Attempt unsupported Graph paths/fields, delete nonempty catalog, and instantiate separate tenants. | Structured error codes, no cross-instance writes and reset restoring fictional seeds. | `test/ENTITLEMENT_TESTS.js`, `test/ENTRA_CORE.test.js`, `test/PS_GRAPH_TESTS.js` | Session reset (not PRO-14) |
+| **T12** | Browser script selection | Ready (simulated DOM) | Click examples in `index.html`; run; verify terminal result and category/buttons. | HTML inline JavaScript passes syntax; sample button fills editor and Run dispatches to simulator. | `test/PS_GRAPH_SAMPLES.test.js`, `test/ENTITLEMENT_TESTS.js` | UI delivery for all ready examples |
 
 ### Manual execution checklist (intentionally unchecked)
 
@@ -295,11 +295,11 @@ Notes / defect ID: ______
 
 ## Source references
 
-- [`docs/CAPABILITIES.md`](https://github.com/flyingzebra/IGAsim/blob/a519417fc448a00eed9bc03ad18cc0ecd1e958d0/docs/CAPABILITIES.md) — authoritative capability IDs and architecture target.
-- [`docs/ENTITLEMENT_MANAGEMENT.md`](https://github.com/flyingzebra/IGAsim/blob/a519417fc448a00eed9bc03ad18cc0ecd1e958d0/docs/ENTITLEMENT_MANAGEMENT.md) — package/catalog metadata-only scope and safeguards.
-- [`docs/PS_GRAPH_COMMANDS.md`](https://github.com/flyingzebra/IGAsim/blob/a519417fc448a00eed9bc03ad18cc0ecd1e958d0/docs/PS_GRAPH_COMMANDS.md) — supported simulated PowerShell Graph cmdlets.
-- [`res/ENTITLEMENT_TESTS.js`](https://github.com/flyingzebra/IGAsim/blob/a519417fc448a00eed9bc03ad18cc0ecd1e958d0/res/ENTITLEMENT_TESTS.js) — catalog/package API and HTML example tests.
-- [`index.html`](https://github.com/flyingzebra/IGAsim/blob/a519417fc448a00eed9bc03ad18cc0ecd1e958d0/index.html) — interactive in-browser editor and example buttons.
+- [`docs/CAPABILITIES.md`](CAPABILITIES.md) — authoritative capability IDs and architecture target.
+- [`docs/ENTITLEMENT_MANAGEMENT.md`](ENTITLEMENT_MANAGEMENT.md) — package/catalog metadata-only scope and safeguards.
+- [`docs/PS_GRAPH_COMMANDS.md`](PS_GRAPH_COMMANDS.md) — supported simulated PowerShell Graph cmdlets.
+- [`test/ENTITLEMENT_TESTS.js`](../test/ENTITLEMENT_TESTS.js) — catalog/package API and HTML example tests.
+- [`index.html`](../index.html) — interactive in-browser editor and example buttons.
 
 ---
-**Last assessed:** 2026-11-05; baseline commit `a519417`. Reassess statuses and rerun tests after every structural change. Do not equate feature-level simulation with full IGA production readiness.
+**Last assessed:** 2026-11-05; test-directory migration: 2026-11-06; baseline commit `a519417`. Reassess statuses and rerun tests after every structural change. Do not equate feature-level simulation with full IGA production readiness.

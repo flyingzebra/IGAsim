@@ -75,10 +75,10 @@ Load the Graph backend and its command provider before the PowerShell execution 
 The engine is browser-first and does not have `module.exports`. The Node regression tests now load the same classic scripts using `node:vm`; they do not require the engine files as CommonJS modules.
 
 ```bash
-node res/PS_TESTS.js
-node res/PS_TESTS_v01.js
-node res/PS_GRAPH_TESTS.js
-node res/ENTRA_CORE.test.js
+node test/PS_TESTS.js
+node test/PS_TESTS_v01.js
+node test/PS_GRAPH_TESTS.js
+node test/ENTRA_CORE.test.js
 ```
 
 Expected: **50** v0.2 tests and **18** v0.1 tests. The additional v0.2 tests exercise the constructor layout, module loading in a browser-like context, independent instances, native error behavior, and the terminal adapter.

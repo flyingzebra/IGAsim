@@ -10,7 +10,7 @@ A **static, browser-only** PowerShell *subset* simulator with a separate parser,
 4. Click **Inspect AST** to see the parsed control-flow structure before execution.
 5. **Reset sandbox** reinitializes variables, virtual files, on-premises directory objects, cloud tenant objects, simulated Graph connection and LDAP query log. Terminal command history in `localStorage` is separate.
 
-Run the engine tests from the repository root (Node is used **only** for tests): `node res/PS_TESTS.js`, `node res/PS_TESTS_v01.js`, `node res/ActiveDirectory.test.js`, and `node res/AD_INTEGRATION_SMOKE.js`, `node res/ENTRA_CORE.test.js`, and `node res/PS_GRAPH_TESTS.js`.
+Run the engine tests from the repository root (Node is used **only** for tests): `node test/PS_TESTS.js`, `node test/PS_TESTS_v01.js`, `node test/ActiveDirectory.test.js`, and `node test/AD_INTEGRATION_SMOKE.js`, `node test/ENTRA_CORE.test.js`, and `node test/PS_GRAPH_TESTS.js`.
 
 ## Architecture
 
@@ -118,15 +118,16 @@ Get-LDAPQueryLog
 
 ## Testing
 
-- `node res/PS_GRAPH_TESTS.js`: cloud PowerShell cmdlet and integration tests.
-- `node res/PS_GRAPH_SAMPLES.test.js`: all 14 selectable Microsoft Graph example scripts and the UI button wiring.
-- `node res/ENTRA_CORE.test.js`: standalone Graph core tests.
-- `node res/ENTITLEMENT_TESTS.js`: governance core CRUD tests, relationship integrity, 9 runnable scripts, and HTML button/Run verification.
+Run every regression suite with `node test/run-all.js`. The test files live in [`test/`](test/README.md); application modules stay in `res/`. A detailed test-readiness map is in [`docs/IGAsim-Capability-Test-Checklist.md`](docs/IGAsim-Capability-Test-Checklist.md).
 
-- `node res/PS_TESTS.js`: 50 regression tests covering parser, control flow, virtual filesystem, AD queries, LDAP filters, bitwise and transitive matching, group mutations, reset and error handling.
-- `node res/PS_TESTS_v01.js`: original 18 v0.1 compatibility tests.
-- `node res/ActiveDirectory.test.js`: 33 standalone LDAP tests.
-- `node res/AD_INTEGRATION_SMOKE.js`: 14 shared-backend integration tests.
+- `node test/PS_GRAPH_TESTS.js`: cloud PowerShell cmdlet and integration tests.
+- `node test/PS_GRAPH_SAMPLES.test.js`: all 14 selectable Microsoft Graph example scripts and the UI button wiring.
+- `node test/ENTRA_CORE.test.js`: standalone Graph core tests.
+- `node test/ENTITLEMENT_TESTS.js`: governance core CRUD tests, relationship integrity, 9 runnable scripts, and HTML button/Run verification.
+- `node test/PS_TESTS.js`: 50 regression tests covering parser, control flow, virtual filesystem, AD queries, LDAP filters, bitwise and transitive matching, group mutations, reset and error handling.
+- `node test/PS_TESTS_v01.js`: original 18 v0.1 compatibility tests.
+- `node test/ActiveDirectory.test.js`: 33 standalone LDAP tests.
+- `node test/AD_INTEGRATION_SMOKE.js`: 14 shared-backend integration tests.
 - JavaScript syntax checks pass. An automated graphical Chromium smoke test **could not complete** in the provided environment; open the standalone HTML in a desktop browser for a manual UI check.
 
 ## References

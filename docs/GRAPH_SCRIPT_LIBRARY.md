@@ -33,4 +33,4 @@ These scripts run against the fictional `northwind.example` tenant in `ENTRA_COR
 - The PowerShell parser implements only a subset of PowerShell. Examples avoid unsupported constructs such as advanced `param`, splatting, `try/catch`, `ConvertTo-Json` and `ForEach-Object`.
 - The AD and Entra datasets are **independent**; the comparison sample does not imply synchronization.
 
-Run `node res/PS_GRAPH_SAMPLES.test.js` to check every example as actually embedded in `index.html`, including a simulated editor-click/Run interaction.
+Run `node test/PS_GRAPH_SAMPLES.test.js` to check every example as actually embedded in `index.html`, including a simulated editor-click/Run interaction.

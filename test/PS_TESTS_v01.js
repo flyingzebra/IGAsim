@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js'])
 {
-    const filepath = path.join(__dirname, filename);
+    const filepath = path.join(__dirname, '..', 'res', filename);
     vm.runInThisContext(fs.readFileSync(filepath, 'utf8'), { filename: filepath });
 }
 const { PowerShellSimulator, parse, VirtualFS } = globalThis.PowerShellJS;
@@ -61,6 +61,7 @@ async function runTests()
     await test('No changes to actual host filesystem', () =>
     {
         const fs = require('node:fs');
+        assert.equal(fs.existsSync(require('node:path').join(__dirname, '..', 'res', 'notes.txt')), false);
         assert.equal(fs.existsSync(require('node:path').join(__dirname, 'notes.txt')), false);
     });
     await test('Folder listing produces objects', async () =>

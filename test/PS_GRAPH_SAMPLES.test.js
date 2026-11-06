@@ -1,5 +1,5 @@
 /* Tests the actual scripts selectable in index.html, not rewritten approximations.
- * Run: node res/PS_GRAPH_SAMPLES.test.js
+ * Run: node test/PS_GRAPH_SAMPLES.test.js
  */
 'use strict';
 const assert = require('node:assert/strict');
@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const root = __dirname;
+const root = path.join(__dirname, '..', 'res');
 const html = fs.readFileSync(path.join(root, '..', 'index.html'), 'utf8');
 const jsFiles = ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js',
     'ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'];
