@@ -1,6 +1,9 @@
-# PowerShellJS v0.2 — Offline PowerShell, Active Directory and Entra ID
+# Lightweight IGA Simulator
 
 A **static, browser-only** PowerShell *subset* simulator with a separate parser, runtime, simulated Windows filesystem, and simulated Active Directory / LDAP provider and a Microsoft Entra ID / Graph provider. It is **not** Microsoft PowerShell, a real AD controller, an LDAP client, or a production script validation tool. No Node.js, server, installation, or internet access is needed to use the application.
+
+<a href=https://flyingzebra.github.io/IGAsim/><img src="/res/IGAsplash.png?raw=true" width=100% /></a>
+
 
 ## Quick start
 
