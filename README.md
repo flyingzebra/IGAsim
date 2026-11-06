@@ -1,4 +1,4 @@
-# IGA Simulator
+# Lightweight IGA Simulator
 
 A **static, browser-only** PowerShell *subset* simulator with a separate parser, runtime, simulated Windows filesystem, and simulated Active Directory / LDAP provider and a Microsoft Entra ID / Graph provider. It is **not** Microsoft PowerShell, a real AD controller, an LDAP client, or a production script validation tool. No Node.js, server, installation, or internet access is needed to use the application.
 
