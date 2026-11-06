@@ -4,6 +4,7 @@ A **static, browser-only** PowerShell *subset* simulator with a separate parser,
 
 <a href=https://flyingzebra.github.io/IGAsim/><img src="/res/IGAsplash.png?raw=true" width=100% /></a>
 
+<img src="/res/IGAcomponents.png?raw=true" />
 
 ## Quick start
 
@@ -16,8 +17,6 @@ A **static, browser-only** PowerShell *subset* simulator with a separate parser,
 Run the engine tests from the repository root (Node is used **only** for tests): `node test/PS_TESTS.js`, `node test/PS_TESTS_v01.js`, `node test/ActiveDirectory.test.js`, and `node test/AD_INTEGRATION_SMOKE.js`, `node test/ENTRA_CORE.test.js`, and `node test/PS_GRAPH_TESTS.js`.
 
 ## Architecture
-<img src="/res/IGAcomponents.png?raw=true" />
-
 
 ```
 index.html + PS_APP.css
