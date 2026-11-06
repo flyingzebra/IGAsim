@@ -2,7 +2,7 @@
 
 **Baseline:** IGAsim `62478c3b1e030c203aaf0f559a0f9e77dce5ae77`
 **Convention:** [`docs/CODING_CONVENTIONS.md`](CODING_CONVENTIONS.md)
-**Scope:** `res/PS_*.js` browser modules and the Node-only regression tests.
+**Scope:** `res/PS_*.js` browser modules and the Browser-only regression tests.
 
 ## Design
 
@@ -64,22 +64,17 @@ Load the Graph backend and its command provider before the PowerShell execution 
 <script src="res/PS_TERMINAL_ADAPTER.js"></script>
 ```
 
-`PS_AD_COMMANDS.js` uses the `PowerShellAD` compatibility namespace exposed by `AD_CORE.js`. `PS_GRAPH_COMMANDS.js` uses `EntraDirectory.Graph()` for the cloud tenant. `PS_CORE.js` registers both the on-prem AD and Graph command containers. No JSON fetch, bundler, server, Node module or external resource has been added.
+`PS_AD_COMMANDS.js` uses the `PowerShellAD` compatibility namespace exposed by `AD_CORE.js`. `PS_GRAPH_COMMANDS.js` uses `EntraDirectory.Graph()` for the cloud tenant. `PS_CORE.js` registers both the on-prem AD and Graph command containers. No JSON fetch, bundler, server, Node module or external resource is required. The browser test harness uses `res/PS_APP.js` for the same UI bootstrap as the main page.
 
 ## Error constructor compatibility
 
 `PSError`, `DirectoryError` and `SyntaxErrorPS` are now plain functions that **return a native `Error` instance** carrying the original `.name`, `.message`, `.stack`, `.code` and, when relevant, `.line`/`.column` properties. This retains ordinary `instanceof Error` behavior without `extends Error` or prototype chains. One distinction: `error instanceof PSError` is no longer true (likewise for the other two custom error constructors). The current engine uses error properties rather than that test.
 
-## Node-only regression tests
+## Browser-only regression tests
 
-The engine is browser-first and does not have `module.exports`. The Node regression tests now load the same classic scripts using `node:vm`; they do not require the engine files as CommonJS modules.
+The engine is browser-first and does not have `module.exports`. The browser regression tests load the same classic scripts via `<script src>` tags in independent iframes, without CommonJS or Node.js.
 
-```bash
-node test/PS_TESTS.js
-node test/PS_TESTS_v01.js
-node test/PS_GRAPH_TESTS.js
-node test/ENTRA_CORE.test.js
-```
+**Run the regression suites:** Open [`test/index.html`](../test/index.html) in a browser. The dashboard runs the complete suite without Node.js or a server.
 
 Expected: **50** v0.2 tests and **18** v0.1 tests. The additional v0.2 tests exercise the constructor layout, module loading in a browser-like context, independent instances, native error behavior, and the terminal adapter.
 

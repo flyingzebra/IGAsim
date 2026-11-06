@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IGAsim — Browser regression tests</title>
+<style>
+:root {color-scheme:dark;--bg:#0e1521;--panel:#19263a;--line:#33445c;--muted:#b1c1d8;--green:#79dbba;--red:#ffa7a7}
+* {box-sizing:border-box}
+body {margin:0;padding:30px 18px;background:var(--bg);color:#f1f6ff;font:15px/1.5 system-ui,sans-serif}
+main {max-width:1050px;margin:auto} h1 {margin:0 0 6px;font-size:clamp(25px,4vw,37px)}
+p {color:var(--muted);margin:6px 0 19px}
+button {background:#28496b;color:#f7fbff;border:1px solid #537699;padding:10px 14px;border-radius:7px;font:inherit;cursor:pointer}
+button:hover {background:#35618c}button:disabled {opacity:.5;cursor:wait}
+.controls {display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:20px 0}
+#overall {font-weight:700;font-size:18px} .stats {display:flex;gap:16px;flex-wrap:wrap;margin:10px 0 20px}
+.stat {padding:9px 16px;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.suite {background:var(--panel);border:1px solid var(--line);border-radius:9px;margin:11px 0;overflow:hidden}
+.suite-header {display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 15px}
+.suite-header strong {overflow-wrap:anywhere}.suite-header span {color:var(--muted);white-space:nowrap}
+.suite[data-status="pass"] .suite-header span {color:var(--green)}
+.suite[data-status="fail"] .suite-header span {color:var(--red)}
+.suite details {border-top:1px solid var(--line);padding:9px 15px}
+.suite summary {cursor:pointer;color:var(--muted)}
+.suite pre {font:12px/1.55 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word;max-height:310px;overflow:auto;margin:8px 0}
+.pass {color:var(--green)}.fail {color:var(--red)}
+small {color:var(--muted)}iframe {position:absolute;width:0;height:0;border:0;opacity:0}
+</style>
+</head>
+<body><main>
+<h1>IGAsim Regression Tests</h1>
+<p>Run the complete offline test suite in your browser — no Node.js, web server, build tools or external libraries.</p>
+<div class="controls"><button id="run">Run all suites</button><label><input type="checkbox" id="details"> Expand failed tests</label><span id="overall" role="status">Ready</span></div>
+<div class="stats"><div class="stat">Passed: <strong id="passed">0</strong></div><div class="stat">Failed: <strong id="failed">0</strong></div><div class="stat">Suites finished: <strong id="finished">0 / 8</strong></div></div>
+<div id="suites"></div>
+<p><small>Tests run in isolated frames. Browser scripts load from ../res/ with classic script tags and all data stays local. Open this page directly with file://. See test/README.md for details.</small></p>
+</main><script src="suites.js"></script><script src="dashboard.js"></script></body></html>

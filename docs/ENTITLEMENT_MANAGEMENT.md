@@ -85,16 +85,7 @@ The examples in the HTML editor have been tested against the project's **limited
 
 ## Test commands
 
-```bash
-node test/ENTITLEMENT_TESTS.js
-node test/ENTRA_CORE.test.js
-node test/PS_GRAPH_TESTS.js
-node test/PS_GRAPH_SAMPLES.test.js
-node test/PS_TESTS.js
-node test/PS_TESTS_v01.js
-node test/ActiveDirectory.test.js
-node test/AD_INTEGRATION_SMOKE.js
-```
+**Run the regression suites:** Open [`test/index.html`](../test/index.html) in a browser. The dashboard runs the complete suite without Node.js or a server.
 
 ## Microsoft documentation
 

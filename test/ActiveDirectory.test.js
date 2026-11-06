@@ -1,11 +1,5 @@
-/* Run: node test/ActiveDirectory.test.js */
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const path = require('node:path');
-const adFile = path.join(__dirname, '..', 'res', 'AD_CORE.js');
-// A classic browser script: no CommonJS wrapper or exports in the emulator.
-const ActiveDirectory = vm.runInThisContext(fs.readFileSync(adFile, 'utf8') + '\nActiveDirectory;', { filename: adFile });
+/* Browser-only AD_CORE regression tests. */
+// The real AD_CORE.js classic script is loaded by test/suite.html.
 const ROOT = 'DC=contoso,DC=local';
 let tests = 0;
 function test(name, fn) { try { fn(); tests++; console.log('PASS ' + name); } catch (e) { console.error('FAIL ' + name); throw e; } }
@@ -54,18 +48,17 @@ test('sampleDB snapshots do not share references', () => {
   a.entries[0].attributes.dc[0]='changed';assert.equal(b.entries[0].attributes.dc[0],'contoso');
 });
 test('offline module has no JSON-fetch dependency', () => {
-  const src=fs.readFileSync(adFile,'utf8');
+  const src=ActiveDirectory.toString();
   assert.match(src,/this\.DB\s*=\s*\{/);assert.match(src,/this\.LDAP\s*=\s*function\s*\(/);
   assert.doesNotMatch(src, /\bfetch\s*\(|\bXMLHttpRequest\s*\(|prototype\.LDAP\s*=/);
   assert.doesNotMatch(src, /module\.exports|\bfactory\b|\(function\s*\(root/);
 });
 test('plain browser script exposes top-level ActiveDirectory()', () => {
-  const src = fs.readFileSync(adFile, 'utf8');
-  const sandbox = { TextEncoder, TextDecoder };
-  vm.runInNewContext(src, sandbox, { filename: adFile });
+  const sandbox = window;
   assert.equal(typeof sandbox.ActiveDirectory, 'function');
   let a = new sandbox.ActiveDirectory();
   assert.equal(a.LDAP('search',{filter:'(objectClass=user)'}).count,4); // includes computer user objectClass
   assert.equal(a.DB.entries.length,11);
 });
 console.log('\n' + tests + ' tests passed.');
+BrowserTest.done();

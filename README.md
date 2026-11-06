@@ -16,12 +16,12 @@ A **static, browser-only** PowerShell *subset* simulator with a separate parser,
 4. Click **Inspect AST** to see the parsed control-flow structure before execution.
 5. **Reset sandbox** reinitializes variables, virtual files, on-premises directory objects, cloud tenant objects, simulated Graph connection and LDAP query log. Terminal command history in `localStorage` is separate.
 
-Run the engine tests from the repository root (Node is used **only** for tests): `node test/PS_TESTS.js`, `node test/PS_TESTS_v01.js`, `node test/ActiveDirectory.test.js`, and `node test/AD_INTEGRATION_SMOKE.js`, `node test/ENTRA_CORE.test.js`, and `node test/PS_GRAPH_TESTS.js`.
+Open **[`test/index.html`](test/index.html)** directly in your browser and select **Run all suites** to execute all 271 regression checks. No Node.js, server, package manager, or build step is needed.
 
 ## Solution
 
 ```
-index.html + PS_APP.css
+index.html + PS_APP.js + PS_APP.css
          |
 COM_TERM.js + COM_TERM.css             [unchanged generic terminal]
          |
@@ -124,18 +124,20 @@ Get-LDAPQueryLog
 
 ## Testing
 
-Run every regression suite with `node test/run-all.js`. The test files live in [`test/`](test/README.md); application modules stay in `res/`. A detailed test-readiness map is in [`docs/IGAsim-Capability-Test-Checklist.md`](docs/IGAsim-Capability-Test-Checklist.md).
+Run all eight suites by opening **[`test/index.html`](test/index.html)** directly in Chrome, Edge, Firefox or Safari, and clicking **Run all suites**. The page shows pass/fail counts and per-test details. The test modules are in [`test/`](test/README.md), and the runtime modules stay in `res/`. No server, command line or Node.js is required.
 
-- `node test/PS_GRAPH_TESTS.js`: cloud PowerShell cmdlet and integration tests.
-- `node test/PS_GRAPH_SAMPLES.test.js`: all 14 selectable Microsoft Graph example scripts and the UI button wiring.
-- `node test/ENTRA_CORE.test.js`: standalone Graph core tests.
-- `node test/ENTITLEMENT_TESTS.js`: governance core CRUD tests, relationship integrity, 9 runnable scripts, and HTML button/Run verification.
-- `node test/PS_TESTS.js`: 50 regression tests covering parser, control flow, virtual filesystem, AD queries, LDAP filters, bitwise and transitive matching, group mutations, reset and error handling.
-- `node test/PS_TESTS_v01.js`: original 18 v0.1 compatibility tests.
-- `node test/ActiveDirectory.test.js`: 33 standalone LDAP tests.
-- `node test/AD_INTEGRATION_SMOKE.js`: 14 shared-backend integration tests.
-- JavaScript syntax checks pass. An automated graphical Chromium smoke test **could not complete** in the provided environment; open the standalone HTML in a desktop browser for a manual UI check.
+| Browser suite | Coverage |
+|---|---|
+| `PS_TESTS.js` | PowerShell parser, command execution and AD integration (50) |
+| `PS_TESTS_v01.js` | Original PowerShell v0.1 behavior (18) |
+| `ActiveDirectory.test.js` | Standalone LDAP engine (33) |
+| `AD_INTEGRATION_SMOKE.js` | Shared AD/LDAP backend (14) |
+| `ENTRA_CORE.test.js` | Entra Graph core and standalone demo (53) |
+| `PS_GRAPH_TESTS.js` | Graph PowerShell cmdlets and browser script wiring (54) |
+| `PS_GRAPH_SAMPLES.test.js` | Graph examples, browser editor and execution (17) |
+| `ENTITLEMENT_TESTS.js` | Catalog/package CRUD and governance examples (32) |
 
+The complete capability-level checklist remains in [`docs/IGAsim-Capability-Test-Checklist.md`](docs/IGAsim-Capability-Test-Checklist.md). The suite uses local `file://` script tags and never contacts real identity systems.
 ## References
 
 - Microsoft Learn: [Get-ADUser](https://learn.microsoft.com/en-us/powershell/module/activedirectory/get-aduser), [about_ActiveDirectory_Filter](https://learn.microsoft.com/en-us/powershell/module/activedirectory/about/about_activedirectory_filter), [LDAP search filter syntax](https://learn.microsoft.com/en-us/windows/win32/adsi/search-filter-syntax), and [about_Pipelines](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_pipelines).

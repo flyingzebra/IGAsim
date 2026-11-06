@@ -135,12 +135,9 @@ PowerShellJS integration is provided in `PS_GRAPH_COMMANDS.js`, which translates
 
 From the repository root:
 
-```bash
-node --check res/ENTRA_CORE.js
-node test/ENTRA_CORE.test.js
-```
+**Run the regression suites:** Open [`test/index.html`](../test/index.html) in a browser. The dashboard runs the complete suite without Node.js or a server.
 
-The test suite covers global script loading, schema and state isolation, OData queries, pagination, CRUD, relationship operations, error envelopes, and simulated session/reset behavior. Node is used **only** for testing; browser runtime has no dependencies.
+The test suite covers global script loading, schema and state isolation, OData queries, pagination, CRUD, relationship operations, error envelopes, and simulated session/reset behavior. The browser regression runner and the browser runtime have no Node.js dependency.
 
 ## Microsoft documentation used as API references
 

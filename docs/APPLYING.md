@@ -18,7 +18,7 @@ git checkout 46288fe657efc58a10cd8249b01351fa2501d19a
 # (optional) git switch -c refactor/inline-active-directory-ldap
 git apply --check IGAsim-inline-ad.patch
 git apply IGAsim-inline-ad.patch
-node test/ActiveDirectory.test.js
+# Run test/index.html in your browser and review the ActiveDirectory suite results.
 # commit changes after verification
 ```
 

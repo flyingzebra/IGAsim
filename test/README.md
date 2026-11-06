@@ -1,24 +1,31 @@
-# IGAsim regression tests
+# IGAsim browser regression tests
 
-The `test/` directory contains **Node-only** regression suites. Browser runtime JavaScript, CSS and simulation data remain in `res/`, and the application still opens offline using `index.html`.
+Open **[`test/index.html`](index.html)** directly in a modern browser from the IGAsim directory. The browser regression dashboard automatically runs the eight suites, displays per-check pass/fail results, and has a **Run all suites** button to rerun them.
 
-From the repository root:
+**No Node.js, npm, terminal, web server, download or external testing library is required.** The browser uses ordinary `<script src="...">` tags to load the same `../res/` modules as the main application. All identity fixtures are fictional and remain in memory.
 
-```bash
-node test/run-all.js
-```
+| Suite | Coverage | Expected checks |
+|---|---|---:|
+| `PS_TESTS.js` | PowerShell v0.2 parser, virtual filesystem, AD, session and terminal | 50 |
+| `PS_TESTS_v01.js` | Legacy PowerShell v0.1 compatibility | 18 |
+| `ActiveDirectory.test.js` | Standalone LDAP engine | 33 |
+| `AD_INTEGRATION_SMOKE.js` | Shared AD/LDAP backend integration | 14 |
+| `ENTRA_CORE.test.js` | Graph API, fixture isolation and standalone demo | 53 |
+| `PS_GRAPH_TESTS.js` | Graph PowerShell cmdlets and browser app bootstrap | 54 |
+| `PS_GRAPH_SAMPLES.test.js` | 14 Graph examples and DOM editor controls | 17 |
+| `ENTITLEMENT_TESTS.js` | Catalog/package CRUD and nine entitlement-management examples | 32 |
+| **Total** | | **271** |
 
-Run an individual suite with `node test/PS_TESTS.js`, etc. The runner uses the Node executable and resolves test paths independently of the current working directory. Each suite loads JavaScript from `../res/` using its own file location, not the shell's current directory. The UI-oriented tests also load `../index.html` and `../examples/`.
+## How it works
 
-| Suite | Covers |
-|---|---|
-| `PS_TESTS.js` | PowerShell v0.2 parser, AD commands, session and terminal |
-| `PS_TESTS_v01.js` | Legacy PowerShell v0.1 regression |
-| `ActiveDirectory.test.js` | Standalone LDAP engine (`AD_CORE.js`) |
-| `AD_INTEGRATION_SMOKE.js` | Shared LDAP/PowerShell directory integration |
-| `ENTRA_CORE.test.js` | Microsoft Graph-style Entra core |
-| `PS_GRAPH_TESTS.js` | Graph PowerShell cmdlets and DOM harness |
-| `PS_GRAPH_SAMPLES.test.js` | Embedded Graph examples and HTML script selection |
-| `ENTITLEMENT_TESTS.js` | Catalog/package CRUD and entitlement examples |
+- `index.html` is the graphical suite runner, and `dashboard.js` collects results.
+- `suite.html` runs each suite in a separate browser iframe, with module scripts loaded from `../res/`. This prevents state and top-level declarations leaking between suites.
+- `browser-assert.js` implements lightweight dependency-free assertions. `browser-kit.js` captures test progress, returns browser errors to the dashboard, and uses fresh `srcdoc` frames for isolation tests.
+- `app-fixture.js` provides a small DOM/terminal double for the **same `res/PS_APP.js`** bootstrap used in the real application. The standalone Entra demo likewise exposes shared `tools/EntraDirectory-demo.js` controls for browser testing.
+- No `require()`, `node:fs`, `node:vm`, Node runner or network/file-fetch API is used by the regression tests.
 
-`test/run-all.js` runs all eight suites and returns a nonzero exit code if any suite fails. These tests **do not replace** interactive browser verification and do not use real Entra ID, LDAP or SAP services.
+## Coverage boundaries
+
+The existing 271 regression scenarios are retained. Tests that previously inspected local source files with Node now exercise browser-loaded constructors and executable script paths. Since browser security prevents silently reading sibling `.ps1` and HTML files over `file://`, strict byte-for-byte parity checks of standalone `.ps1` copies are replaced by parser and execution checks of the editor's actual scripts. If editing standalone `.ps1` copies, manually compare them with the editor samples. A full visual inspection of the production `index.html` is still recommended.
+
+The suite is offline and simulation-only: it never authenticates to Microsoft Graph, AD DS, Entra ID, or SAP. Browser behavior may differ across engines; test in your preferred browser before release.

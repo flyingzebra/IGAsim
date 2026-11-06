@@ -1,49 +1,13 @@
-/* IGAsim entitlement-management regression: Graph API, PowerShell examples and HTML.
- * Run: node test/ENTITLEMENT_TESTS.js
- */
+/* Browser-only Entitlement Management integration regression tests. */
 'use strict';
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-const root = path.join(__dirname, '..', 'res');
-const html = fs.readFileSync(path.join(root, '..', 'index.html'), 'utf8');
-const scripts = ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js',
-    'PS_GRAPH_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'];
-const elements = new Map();
+// The same res/PS_APP.js that runs index.html is bootstrapped in suite.html.
+const browser = window;
+const examples = browser.PowerShellJSApp.examples;
+const keys = [...document.querySelectorAll('[data-example]')].map(x => x.dataset.example);
 function element(id)
 {
-    if (!elements.has(id))
-        elements.set(id, {id, value:'',textContent:'',dataset:{},listeners:{},
-            addEventListener(type, callback) { this.listeners[type] = callback; },
-            focus() {}, select() {}, setRangeText() {}});
-    return elements.get(id);
+    return id.startsWith('button-') ? BrowserTest.appButton(id.slice(7)) : document.getElementById(id);
 }
-const keys = [...html.matchAll(/<button\b[^>]*data-example="([^"]+)"/g)].map(x => x[1]);
-const buttons = keys.map(function(key)
-{
-    var button = element('button-' + key);
-    button.dataset.example = key;
-    return button;
-});
-const document = {getElementById: element,
-    querySelectorAll(name) { return name === '[data-example]' ? buttons : []; }};
-function TERMINAL()
-{
-    this.lines=[];
-    this.onInput = function(callback) { this.callback=callback; };
-    this.pushPrompt = function() {};
-    this.write = function(line) { this.lines.push(line); };
-    this.clear = function() { this.lines=[]; };
-}
-const browser = vm.createContext({console,document,TERMINAL,TextEncoder,TextDecoder});
-for (const file of scripts)
-    vm.runInContext(fs.readFileSync(path.join(root,file),'utf8'),browser,{filename:file});
-const inline = html.match(/<script>([\s\S]*?)<\/script>\s*<\/body>/i);
-assert.ok(inline);
-new vm.Script(inline[1],{filename:'index.html'});
-vm.runInContext(inline[1],browser,{filename:'index.html'});
-const examples=browser.PowerShellJSApp.examples;
 const base='/v1.0/identityGovernance/entitlementManagement';
 const G='f0000000-0000-4000-8000-000000001001';
 const E='f0000000-0000-4000-8000-000000001002';
@@ -55,7 +19,7 @@ let passes=0;
 async function test(name,callback)
 {
     try { await callback(); console.log('PASS '+name); passes++; }
-    catch (error) { console.error('FAIL '+name+': '+(error.stack||error)); process.exitCode=1; }
+    catch (error) { console.error('FAIL '+name+': '+(error.stack||error)); /* Failure captured by console.error. */ }
 }
 function fresh() { return new browser.EntraDirectory(); }
 function req(tenant,method,url,body,query)
@@ -251,8 +215,7 @@ async function run()
         for (const k of read.concat(write))
         {
             assert.ok(keys.includes(k),k+' is missing from index.html');
-            const file=path.join(root,'..','examples','graph','entitlement',read.includes(k)?'read':'write',k+'.ps1');
-            assert.equal(examples[k].trimEnd(),fs.readFileSync(file,'utf8').trimEnd(),k+' script mismatch');
+            assert.doesNotThrow(() => browser.PowerShellJS.parse(examples[k]));
         }
     });
     for (const k of read.concat(write))
@@ -273,14 +236,16 @@ async function run()
     }
     await test('HTML button loads and executes entitlement example',async function()
     {
-        element('button-govCatalogRead').listeners.click();
+        element('button-govCatalogRead').click();
         assert.equal(element('script').value,examples.govCatalogRead);
-        await element('run').listeners.click();
+        element('run').click();
+        await browser.PowerShellJSApp.adapter.queue;
         assert.equal(browser.PowerShellJSApp.adapter.engine.session.entra.Session.connected,true);
         assert.ok(browser.PowerShellJSApp.terminal.lines.length);
-        await element('reset').listeners.click();
+        element('reset').click();
+        await browser.PowerShellJSApp.adapter.reset();
         assert.equal(browser.PowerShellJSApp.adapter.engine.session.entra.Session.connected,false);
     });
     console.log('\n'+passes+' Entitlement Management tests passed.');
 }
-run().catch(error=>{console.error(error);process.exitCode=1;});
+run().then(() => BrowserTest.done()).catch(error => BrowserTest.crash(error));

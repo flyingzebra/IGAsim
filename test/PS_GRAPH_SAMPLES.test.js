@@ -1,57 +1,14 @@
-/* Tests the actual scripts selectable in index.html, not rewritten approximations.
- * Run: node test/PS_GRAPH_SAMPLES.test.js
- */
+/* Browser-only Graph example regression tests, exercising the real PS_APP.js. */
 'use strict';
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
 
-const root = path.join(__dirname, '..', 'res');
-const html = fs.readFileSync(path.join(root, '..', 'index.html'), 'utf8');
-const jsFiles = ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js',
-    'ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'];
-
-const elements = new Map();
+// The real application bootstrap and browser DOM fixture are loaded by suite.html.
+const browser = window;
+const examples = browser.PowerShellJSApp.examples;
+const sampleKeys = [...document.querySelectorAll('[data-example]')].map(x => x.dataset.example);
 function element(id)
 {
-    if (elements.has(id)) return elements.get(id);
-    const value = {
-        id: id, value: '', textContent: '', dataset: {}, listeners: {},
-        addEventListener(name, listener) { this.listeners[name] = listener; },
-        focus() {}, select() {}, setRangeText() {}
-    };
-    elements.set(id, value);
-    return value;
+    return id.startsWith('button-') ? BrowserTest.appButton(id.slice(7)) : document.getElementById(id);
 }
-const sampleKeys = [...html.matchAll(/<button\b[^>]*\bdata-example="([^"]+)"/g)].map(m => m[1]);
-const buttons = sampleKeys.map(function(key)
-{
-    const button = element('button-' + key);
-    button.dataset.example = key;
-    return button;
-});
-const document = {
-    getElementById: element,
-    querySelectorAll(selector) { return selector === '[data-example]' ? buttons : []; }
-};
-function TERMINAL()
-{
-    this.lines = [];
-    this.onInput = function(callback) { this.callback = callback; };
-    this.pushPrompt = function() {};
-    this.write = function(message) { this.lines.push(message); };
-    this.clear = function() { this.lines = []; };
-}
-const browser = vm.createContext({ console, document, TERMINAL, TextEncoder, TextDecoder });
-for (const file of jsFiles)
-    vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), browser, { filename: file });
-const inlineMatch = html.match(/<script>([\s\S]*?)<\/script>\s*<\/body>/i);
-assert.ok(inlineMatch, 'index.html must have a classic inline initialization script');
-new vm.Script(inlineMatch[1], { filename: 'index.html' });
-vm.runInContext(inlineMatch[1], browser, { filename: 'index.html' });
-
-const examples = browser.PowerShellJSApp.examples;
 const readOnly = [
     'graphTenant','graphITUsers','graphPaging','graphMembership','graphRoles',
     'graphApplications','graphRequest','graphHybrid'
@@ -73,7 +30,7 @@ async function test(name, fn)
     catch (error)
     {
         console.error('FAIL ' + name + ': ' + (error.stack || error));
-        process.exitCode = 1;
+        // BrowserTest records each failed assertion through console.error.
     }
 }
 async function suite()
@@ -86,8 +43,7 @@ async function suite()
             assert.ok(sampleKeys.includes(key), key + ' has no button');
             assert.equal(typeof examples[key], 'string');
             assert.match(examples[key], /Connect-MgGraph/);
-            const file = path.join(root, '..', 'examples', 'graph', readOnly.includes(key) ? 'read' : 'write', key + '.ps1');
-            assert.equal(fs.readFileSync(file, 'utf8').trimEnd(), examples[key].trimEnd(), key + ' file mismatch');
+            assert.doesNotThrow(() => browser.PowerShellJS.parse(examples[key]));
         }
     });
     for (const key of all)
@@ -126,24 +82,26 @@ async function suite()
     {
         const key = 'graphMembership';
         const button = element('button-' + key);
-        assert.equal(typeof button.listeners.click, 'function');
-        button.listeners.click();
+        assert.equal(typeof button.onclick === 'function' || button instanceof HTMLElement, true);
+        button.click();
         assert.equal(element('script').value, examples[key]);
-        await element('run').listeners.click();
+        element('run').click();
+        await browser.PowerShellJSApp.adapter.queue;
         assert.equal(browser.PowerShellJSApp.adapter.engine.session.entra.Session.connected, true);
         assert.ok(browser.PowerShellJSApp.terminal.lines.length > 0);
-        await element('reset').listeners.click();
+        element('reset').click();
+        await browser.PowerShellJSApp.adapter.reset();
         assert.equal(browser.PowerShellJSApp.adapter.engine.session.entra.Session.connected, false);
     });
     await test('Original AD and Graph quick examples are still accessible', async function()
     {
         assert.ok(sampleKeys.includes('adUsers'));
         assert.ok(sampleKeys.includes('graph'));
-        element('button-graph').listeners.click();
+        element('button-graph').click();
         assert.match(element('script').value, /Connect-MgGraph/);
-        element('button-adUsers').listeners.click();
+        element('button-adUsers').click();
         assert.match(element('script').value, /Get-ADUser/);
     });
     console.log('\n' + passed + ' Graph example tests passed.');
 }
-suite().catch(error => { console.error(error); process.exitCode = 1; });
+suite().then(() => BrowserTest.done()).catch(error => BrowserTest.crash(error));

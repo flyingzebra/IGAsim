@@ -1,14 +1,7 @@
-/* ENTRA_CORE v0.1 standalone regression suite. Run: node test/ENTRA_CORE.test.js */
+/* ENTRA_CORE browser regression suite. */
 'use strict';
 
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-const source = fs.readFileSync(path.join(__dirname, '..', 'res', 'ENTRA_CORE.js'), 'utf8');
-const sandbox = vm.createContext({});
-vm.runInContext(source, sandbox, { filename: 'ENTRA_CORE.js' });
-const EntraDirectory = sandbox.EntraDirectory;
+const source = EntraDirectory.toString();
 const base = 'https://graph.microsoft.com/v1.0';
 const U1 = 'f0000000-0000-4000-8000-000000000101';
 const U2 = 'f0000000-0000-4000-8000-000000000102';
@@ -20,11 +13,11 @@ const SP1 = 'f0000000-0000-4000-8000-000000000501';
 const R1 = 'f0000000-0000-4000-8000-000000000601';
 let passed = 0;
 
-function test(name, run)
+async function test(name, run)
 {
     try
     {
-        run();
+        await run();
         passed++;
         console.log('PASS ' + name);
     }
@@ -51,20 +44,22 @@ function ids(response)
 
 // Loading / architecture
 
-test('classic browser script exposes constructor without module wrapper', function()
+async function runTests()
+{
+await test('classic browser script exposes constructor without module wrapper', function()
 {
     assert.equal(typeof EntraDirectory, 'function');
     assert.equal(typeof fresh().Graph, 'function');
     assert.doesNotMatch(source, /module\.exports|\brequire\s*\(|\bclass\s+|\(function\s*\(root/);
 });
-test('plain constructor owns DB and Graph on the instance', function()
+await test('plain constructor owns DB and Graph on the instance', function()
 {
     const a = fresh();
     assert.ok(Object.hasOwn(a, 'DB'));
     assert.ok(Object.hasOwn(a, 'Graph'));
     assert.equal(Object.hasOwn(EntraDirectory.prototype, 'Graph'), false);
 });
-test('all default resources are inline with consistent tenant identity', function()
+await test('all default resources are inline with consistent tenant identity', function()
 {
     const a = fresh();
     assert.equal(a.DB.defaultDomain, 'northwind.example');
@@ -72,18 +67,18 @@ test('all default resources are inline with consistent tenant identity', functio
     for (const name of ['users','groups','applications','servicePrincipals','directoryRoles','devices'])
         assert.ok(a.DB[name].length);
 });
-test('no network call or external JSON data is required', function()
+await test('no network call or external JSON data is required', function()
 {
     assert.doesNotMatch(source, /\bfetch\s*\(|\bXMLHttpRequest\b|\beval\s*\(/);
     assert.equal(get(fresh(), '/v1.0/users').status, 200);
 });
-test('separate tenants have independent mutable state', function()
+await test('separate tenants have independent mutable state', function()
 {
     const a = fresh(), b = fresh();
     a.DB.users[0].displayName = 'Changed';
     assert.equal(b.DB.users[0].displayName, 'Ada Martin');
 });
-test('seed is cloned and reset restores original seed, not external reference', function()
+await test('seed is cloned and reset restores original seed, not external reference', function()
 {
     const sourceSeed = fresh().DB;
     const a = new EntraDirectory(sourceSeed);
@@ -93,14 +88,14 @@ test('seed is cloned and reset restores original seed, not external reference', 
     a.Reset();
     assert.equal(a.DB.users[0].displayName, 'Ada Martin');
 });
-test('incomplete directory seed is rejected', function()
+await test('incomplete directory seed is rejected', function()
 {
     assert.throws(function() { new EntraDirectory({ tenantId: 'x' }); }, /missing array/);
 });
 
 // GET / collections / OData
 
-test('GET users has Graph collection envelope and default projection', function()
+await test('GET users has Graph collection envelope and default projection', function()
 {
     const r = get(fresh(), '/v1.0/users');
     assert.equal(r.status, 200);
@@ -110,24 +105,24 @@ test('GET users has Graph collection envelope and default projection', function(
     assert.equal(r.body.value[0].displayName, 'Ada Martin');
     assert.equal(Object.hasOwn(r.body.value[0], 'department'), false);
 });
-test('GET group collection hides internal memberIds', function()
+await test('GET group collection hides internal memberIds', function()
 {
     const r = get(fresh(), '/groups');
     assert.equal(r.status, 200);
     assert.equal(r.body.value.length, 3);
     assert.equal(Object.hasOwn(r.body.value[0], 'memberIds'), false);
 });
-test('GET one user by id and by userPrincipalName', function()
+await test('GET one user by id and by userPrincipalName', function()
 {
     const a = fresh();
     assert.equal(get(a, '/users/' + U1).body.id, U1);
     assert.equal(get(a, '/users/ADA.MARTIN@northwind.example').body.displayName, 'Ada Martin');
 });
-test('GET accepts full Microsoft Graph URL', function()
+await test('GET accepts full Microsoft Graph URL', function()
 {
     assert.equal(get(fresh(), base + '/users').status, 200);
 });
-test('GET organization and other collections', function()
+await test('GET organization and other collections', function()
 {
     const a = fresh();
     assert.equal(get(a, '/organization').body.value[0].displayName, 'Northwind Demo Tenant');
@@ -136,7 +131,7 @@ test('GET organization and other collections', function()
     assert.equal(get(a, '/directoryRoles').body.value.length, 1);
     assert.equal(get(a, '/devices').body.value.length, 1);
 });
-test('$select returns requested fields and independent copies', function()
+await test('$select returns requested fields and independent copies', function()
 {
     const a = fresh();
     const r = get(a, '/users?$select=id,department,displayName');
@@ -145,20 +140,20 @@ test('$select returns requested fields and independent copies', function()
     r.body.value[0].displayName = 'Response mutated';
     assert.equal(a.DB.users[0].displayName, 'Ada Martin');
 });
-test('unknown or private $select fields fail explicitly', function()
+await test('unknown or private $select fields fail explicitly', function()
 {
     err(get(fresh(), '/users?$select=missingProperty'), 400, 'Request_UnsupportedQuery');
     err(get(fresh(), '/groups?$select=memberIds'), 400, 'Request_UnsupportedQuery');
 });
-test('OData eq filter works on directory attributes', function()
+await test('OData eq filter works on directory attributes', function()
 {
     assert.equal(ids(get(fresh(), "/users?$filter=department eq 'IT'")).length, 2);
 });
-test('OData boolean filter works', function()
+await test('OData boolean filter works', function()
 {
     assert.deepEqual(ids(get(fresh(), '/users?$filter=accountEnabled eq false')), [U3]);
 });
-test('OData and/or/not precedence and parentheses work', function()
+await test('OData and/or/not precedence and parentheses work', function()
 {
     const a = fresh();
     const f = "(department eq 'IT' or department eq 'Finance') and not (accountEnabled eq false)";
@@ -166,7 +161,7 @@ test('OData and/or/not precedence and parentheses work', function()
     const f2 = "department eq 'Finance' or department eq 'IT' and accountEnabled eq false";
     assert.deepEqual(ids(get(a, '/users', { query: { '$filter': f2 } })), [U2,U3]);
 });
-test('OData consecutive AND/OR branches do not self-recurse', function()
+await test('OData consecutive AND/OR branches do not self-recurse', function()
 {
     const a = fresh();
     assert.deepEqual(ids(get(a, '/users', { query: {
@@ -176,33 +171,33 @@ test('OData consecutive AND/OR branches do not self-recurse', function()
         '$filter': "department eq 'None' or department eq 'IT' or department eq 'Finance'"
     } })).length, 3);
 });
-test('OData startswith, endswith and contains', function()
+await test('OData startswith, endswith and contains', function()
 {
     const a = fresh();
     assert.deepEqual(ids(get(a, "/users?$filter=startswith(displayName,'A')")), [U1]);
     assert.deepEqual(ids(get(a, "/users?$filter=endswith(mail,'northwind.example')")).length, 3);
     assert.deepEqual(ids(get(a, "/users?$filter=contains(displayName,'river')")), [U3]);
 });
-test('OData string with doubled apostrophe is parsed safely', function()
+await test('OData string with doubled apostrophe is parsed safely', function()
 {
     const a = fresh();
     a.DB.users[0].displayName = "O'Neil";
     assert.deepEqual(ids(get(a, "/users?$filter=displayName eq 'O''Neil'")), [U1]);
 });
-test('invalid $filter does not evaluate JavaScript', function()
+await test('invalid $filter does not evaluate JavaScript', function()
 {
     const a = fresh();
     err(get(a, '/users', { query: { '$filter': 'constructor.constructor(1)' } }), 400, 'Request_UnsupportedQuery');
     err(get(a, '/users', { query: { '$filter': "department eq 'IT' or" } }), 400, 'Request_UnsupportedQuery');
     err(get(a, '/users', { query: { '$filter': 'missing eq true' } }), 400, 'Request_UnsupportedQuery');
 });
-test('$orderby orders visible values', function()
+await test('$orderby orders visible values', function()
 {
     const r = get(fresh(), '/users?$orderby=displayName desc');
     assert.deepEqual(Array.from(r.body.value, function(v) { return v.displayName; }),
         ['Chloe Rivera','Ben Ortega','Ada Martin']);
 });
-test('paging uses Graph nextLink and can be followed as absolute URI', function()
+await test('paging uses Graph nextLink and can be followed as absolute URI', function()
 {
     const a = fresh();
     const first = get(a, '/users?$top=1&$select=id,displayName');
@@ -216,7 +211,7 @@ test('paging uses Graph nextLink and can be followed as absolute URI', function(
     assert.equal(third.body.value[0].id, U3);
     assert.equal(third.body['@odata.nextLink'], undefined);
 });
-test('$count requires eventual consistency and reflects pre-page total', function()
+await test('$count requires eventual consistency and reflects pre-page total', function()
 {
     const a = fresh();
     err(get(a, '/users?$count=true'), 400, 'Request_UnsupportedQuery');
@@ -224,14 +219,14 @@ test('$count requires eventual consistency and reflects pre-page total', functio
     assert.equal(r.body['@odata.count'], 3);
     assert.equal(r.body.value.length, 1);
 });
-test('/users/$count returns text/plain count', function()
+await test('/users/$count returns text/plain count', function()
 {
     const r = get(fresh(), '/users/$count', { headers: { ConsistencyLevel: 'eventual' } });
     assert.equal(r.status, 200);
     assert.equal(r.body, '3');
     assert.equal(r.headers['Content-Type'], 'text/plain');
 });
-test('unsupported query options reject instead of silently ignoring', function()
+await test('unsupported query options reject instead of silently ignoring', function()
 {
     const a = fresh();
     err(get(a, '/users?$skip=1'), 400, 'Request_UnsupportedQuery');
@@ -240,7 +235,7 @@ test('unsupported query options reject instead of silently ignoring', function()
     err(get(a, '/users?$top=1000'), 400, 'Request_UnsupportedQuery');
     err(get(a, '/users?$skiptoken=-2'), 400, 'Request_UnsupportedQuery');
 });
-test('unknown resource, unsupported version/host and unknown method', function()
+await test('unknown resource, unsupported version/host and unknown method', function()
 {
     const a = fresh();
     err(get(a, '/unknownThings'), 404, 'Request_ResourceNotFound');
@@ -252,7 +247,7 @@ test('unknown resource, unsupported version/host and unknown method', function()
 
 // CRUD
 
-test('POST user requires required fields, returns 201 and does not retain password', function()
+await test('POST user requires required fields, returns 201 and does not retain password', function()
 {
     const a = fresh();
     const body = {
@@ -267,11 +262,11 @@ test('POST user requires required fields, returns 201 and does not retain passwo
     assert.equal(get(a, '/users', { query: { '$filter': "department eq 'Research'" } }).body.value.length, 1);
     assert.equal(Object.hasOwn(a.DB.users[3], 'passwordProfile'), false);
 });
-test('POST rejects incomplete user', function()
+await test('POST rejects incomplete user', function()
 {
     err(call(fresh(), 'POST', '/users', { body: { displayName: 'Incomplete' } }), 400, 'Request_BadRequest');
 });
-test('POST user rejects duplicate userPrincipalName', function()
+await test('POST user rejects duplicate userPrincipalName', function()
 {
     const a = fresh();
     const r = call(a, 'POST', '/users', { body: {
@@ -281,7 +276,7 @@ test('POST user rejects duplicate userPrincipalName', function()
     err(r, 400, 'Request_ResourceConflict');
     assert.equal(a.DB.users.length, 3);
 });
-test('PATCH user applies update with HTTP 204', function()
+await test('PATCH user applies update with HTTP 204', function()
 {
     const a = fresh();
     const r = call(a, 'PATCH', '/users/' + U1, { body: { department: 'Operations', accountEnabled: false } });
@@ -291,20 +286,20 @@ test('PATCH user applies update with HTTP 204', function()
     assert.equal(updated.body.department, 'Operations');
     assert.equal(updated.body.accountEnabled, false);
 });
-test('PATCH refuses id, appId and arbitrary properties', function()
+await test('PATCH refuses id, appId and arbitrary properties', function()
 {
     const a = fresh();
     err(call(a, 'PATCH', '/users/' + U1, { body: { id: 'x' } }), 400, 'Request_BadRequest');
     err(call(a, 'PATCH', '/users/' + U1, { body: { '__proto__': 'ignored', other: true } }), 400, 'Request_BadRequest');
 });
-test('DELETE removes a user and cleans memberships', function()
+await test('DELETE removes a user and cleans memberships', function()
 {
     const a = fresh();
     assert.equal(call(a, 'DELETE', '/users/' + U1).status, 204);
     err(get(a, '/users/' + U1), 404, 'Request_ResourceNotFound');
     assert.equal(ids(get(a, '/groups/' + G1 + '/members')).includes(U1), false);
 });
-test('create and update security groups', function()
+await test('create and update security groups', function()
 {
     const a = fresh();
     const created = call(a, 'POST', '/groups', { body: {
@@ -318,7 +313,7 @@ test('create and update security groups', function()
         { body: { description: 'New description' } }).status, 204);
     assert.equal(get(a, '/groups/' + created.body.id).body.description, 'New description');
 });
-test('create an application then associated service principal', function()
+await test('create an application then associated service principal', function()
 {
     const a = fresh();
     const app = call(a, 'POST', '/applications', { body: { displayName: 'Inventory Demo' } });
@@ -329,13 +324,13 @@ test('create an application then associated service principal', function()
     assert.equal(sp.body.displayName, 'Inventory Demo');
     assert.equal(sp.body.appId, app.body.appId);
 });
-test('reject service principal without an application', function()
+await test('reject service principal without an application', function()
 {
     err(call(fresh(), 'POST', '/servicePrincipals', { body: {
         appId: 'f0000000-0000-4000-8000-000000009999'
     } }), 400, 'Request_BadRequest');
 });
-test('directory roles and organization are read-only', function()
+await test('directory roles and organization are read-only', function()
 {
     const a = fresh();
     err(call(a, 'POST', '/directoryRoles', { body: { displayName: 'X' } }), 405, 'MethodNotAllowed');
@@ -344,16 +339,16 @@ test('directory roles and organization are read-only', function()
 
 // Group memberships / navigation
 
-test('list direct group members', function()
+await test('list direct group members', function()
 {
     assert.deepEqual(ids(get(fresh(), '/groups/' + G2 + '/members')), [G1,U2]);
 });
-test('list transitive group members including nested group', function()
+await test('list transitive group members including nested group', function()
 {
     const members = ids(get(fresh(), '/groups/' + G2 + '/transitiveMembers'));
     assert.deepEqual(members, [G1,U1,U3,U2]);
 });
-test('list user memberOf and role membership', function()
+await test('list user memberOf and role membership', function()
 {
     const a = fresh();
     const groups = ids(get(a, '/users/' + U1 + '/memberOf'));
@@ -361,7 +356,7 @@ test('list user memberOf and role membership', function()
     assert.ok(groups.includes(R1));
     assert.deepEqual(ids(get(a, '/directoryRoles/' + R1 + '/members')), [U1]);
 });
-test('POST and DELETE group $ref update membership with HTTP 204', function()
+await test('POST and DELETE group $ref update membership with HTTP 204', function()
 {
     const a = fresh();
     const ref = { '@odata.id': base + '/directoryObjects/' + U2 };
@@ -370,7 +365,7 @@ test('POST and DELETE group $ref update membership with HTTP 204', function()
     assert.equal(call(a, 'DELETE', '/groups/' + G1 + '/members/' + U2 + '/$ref').status, 204);
     assert.ok(!ids(get(a, '/groups/' + G1 + '/members')).includes(U2));
 });
-test('duplicate membership fails without adding a second copy', function()
+await test('duplicate membership fails without adding a second copy', function()
 {
     const a = fresh();
     err(call(a, 'POST', '/groups/' + G1 + '/members/$ref', { body: {
@@ -378,14 +373,14 @@ test('duplicate membership fails without adding a second copy', function()
     } }), 400, 'Request_BadRequest');
     assert.equal(ids(get(a, '/groups/' + G1 + '/members')).filter(function(id) { return id === U1; }).length, 1);
 });
-test('group nesting cannot create a cycle', function()
+await test('group nesting cannot create a cycle', function()
 {
     const a = fresh();
     err(call(a, 'POST', '/groups/' + G1 + '/members/$ref', { body: {
         '@odata.id': base + '/groups/' + G2
     } }), 400, 'Request_BadRequest');
 });
-test('Microsoft 365 group refuses nested groups and service principals', function()
+await test('Microsoft 365 group refuses nested groups and service principals', function()
 {
     const a = fresh();
     for (const id of [G1,SP1])
@@ -395,7 +390,7 @@ test('Microsoft 365 group refuses nested groups and service principals', functio
         } }), 400, 'Request_BadRequest');
     }
 });
-test('application and directory role cannot become security group members', function()
+await test('application and directory role cannot become security group members', function()
 {
     const a = fresh();
     for (const id of [a.DB.applications[0].id, R1])
@@ -405,27 +400,27 @@ test('application and directory role cannot become security group members', func
         } }), 400, 'Request_BadRequest');
     }
 });
-test('POST rejects read-only collection query options', function()
+await test('POST rejects read-only collection query options', function()
 {
     err(call(fresh(), 'POST', '/groups?$filter=displayName eq \'X\'', {
         body: { displayName: 'X' }
     }), 400, 'Request_UnsupportedQuery');
 });
-test('group reference to nonexistent object returns 404', function()
+await test('group reference to nonexistent object returns 404', function()
 {
     const a = fresh();
     err(call(a, 'POST', '/groups/' + G1 + '/members/$ref', { body: {
         '@odata.id': base + '/directoryObjects/unknown'
     } }), 404, 'Request_ResourceNotFound');
 });
-test('no silent fallback for unknown navigation paths', function()
+await test('no silent fallback for unknown navigation paths', function()
 {
     err(get(fresh(), '/groups/' + G1 + '/owners'), 404, 'Request_ResourceNotFound');
 });
 
 // Session / reset
 
-test('requireAuth blocks until simulated Connect', function()
+await test('requireAuth blocks until simulated Connect', function()
 {
     const a = new EntraDirectory(undefined, { requireAuth: true });
     err(get(a, '/users'), 401, 'InvalidAuthenticationToken');
@@ -435,13 +430,13 @@ test('requireAuth blocks until simulated Connect', function()
     a.Disconnect();
     err(get(a, '/users'), 401, 'InvalidAuthenticationToken');
 });
-test('Connect does not authenticate real credentials or enforce scopes', function()
+await test('Connect does not authenticate real credentials or enforce scopes', function()
 {
     const a = new EntraDirectory(undefined, { requireAuth: true });
     a.Connect([]);
     assert.equal(get(a, '/users').status, 200);
 });
-test('Reset undoes mutations and disconnects', function()
+await test('Reset undoes mutations and disconnects', function()
 {
     const a = fresh();
     a.Connect(['Group.Read.All']);
@@ -454,40 +449,32 @@ test('Reset undoes mutations and disconnects', function()
 
 // Offline HTML demo wiring (script-level smoke test, not graphical rendering)
 
-test('demo loads ENTRA_CORE.js through a relative classic script', function()
+await test('demo and Entra core load as classic scripts', async function()
 {
-    const html = fs.readFileSync(path.join(__dirname, '../tools/EntraDirectory-demo.html'), 'utf8');
-    assert.match(html, /<script src="\.\.\/res\/ENTRA_CORE\.js"><\/script>/);
+    const frame = await BrowserTest.realm(['../res/ENTRA_CORE.js','../tools/EntraDirectory-demo.js'],
+        '<select id="examples"></select><select id="method"><option>GET</option><option>POST</option><option>PATCH</option><option>DELETE</option></select><input id="endpoint"><textarea id="body"></textarea>' +
+        '<pre id="output"></pre><div id="status"></div><button id="send"></button><button id="reset"></button>');
+    assert.equal(typeof frame.window.EntraDirectory, 'function');
+    assert.equal(typeof frame.window.oEntra.Graph, 'function');
+    frame.close();
 });
-test('demo can send a query, mutate a user and reset via its controls', function()
+await test('demo can query, modify and reset using browser controls', async function()
 {
-    const html = fs.readFileSync(path.join(__dirname, '../tools/EntraDirectory-demo.html'), 'utf8');
-    const match = /<script>\s*([\s\S]*?)<\/script>/.exec(html);
-    assert.ok(match);
-    const elements = new Map();
-    for (const key of ['examples','method','endpoint','body','output','status','send','reset'])
-    {
-        elements.set(key, {
-            value: '', textContent: '', style: {}, children: [], handlers: {},
-            appendChild(child) { this.children.push(child); },
-            addEventListener(kind, handler) { this.handlers[kind] = handler; }
-        });
-    }
-    const document = {
-        getElementById(id) { return elements.get(id); },
-        createElement() { return { value: '', textContent: '' }; }
-    };
-    const context = vm.createContext({ document });
-    vm.runInContext(source + '\n' + match[1], context, { filename: 'EntraDirectory-demo.inline.js' });
-    elements.get('send').handlers.click();
-    assert.equal(JSON.parse(elements.get('output').textContent).status, 200);
-    elements.get('examples').value = '7';
-    elements.get('examples').handlers.change();
-    elements.get('send').handlers.click();
-    assert.equal(JSON.parse(elements.get('output').textContent).status, 204);
-    assert.equal(context.oEntra.DB.users[0].accountEnabled, false);
-    elements.get('reset').handlers.click();
-    assert.equal(context.oEntra.DB.users[0].accountEnabled, true);
+    const frame = await BrowserTest.realm(['../res/ENTRA_CORE.js','../tools/EntraDirectory-demo.js'],
+        '<select id="examples"></select><select id="method"><option>GET</option><option>POST</option><option>PATCH</option><option>DELETE</option></select><input id="endpoint"><textarea id="body"></textarea>' +
+        '<pre id="output"></pre><div id="status"></div><button id="send"></button><button id="reset"></button>');
+    const doc = frame.document, tenant = frame.window.oEntra;
+    doc.getElementById('send').click();
+    assert.equal(JSON.parse(doc.getElementById('output').textContent).status, 200);
+    doc.getElementById('examples').value = '7';
+    doc.getElementById('examples').dispatchEvent(new frame.window.Event('change'));
+    doc.getElementById('send').click();
+    assert.equal(JSON.parse(doc.getElementById('output').textContent).status, 204);
+    assert.equal(tenant.DB.users[0].accountEnabled, false);
+    doc.getElementById('reset').click();
+    assert.equal(tenant.DB.users[0].accountEnabled, true);
+    frame.close();
 });
-
 console.log('\n' + passed + ' ENTRA_CORE tests passed.');
+}
+runTests().then(() => BrowserTest.done()).catch(error => BrowserTest.crash(error));

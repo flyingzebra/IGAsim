@@ -6,7 +6,7 @@ An offline, standalone, JavaScript **LDAP API simulator** backed by an inline Ja
 
 - `res/AD_CORE.js` — public `function ActiveDirectory()`; both `this.DB = {...}` and `this.LDAP = function(...) {...}` are declared inside the constructor.
 - `tools/ActiveDirectory-demo.html` — offline browser console (loads only `../res/AD_CORE.js` through a standard `<script>` tag).
-- `test/ActiveDirectory.test.js` — Node.js regression checks.
+- `test/ActiveDirectory.test.js` — browser regression checks.
 - `tools/ActiveDirectory.sample.json` — optional reference snapshot only; not fetched, imported or used at runtime.
 
 Open **`tools/ActiveDirectory-demo.html`** directly in a browser, even from `file://`. There is no asynchronous JSON loading, XHR or `fetch()`, so no CORS issue. The optional **Inspect inline DB** button reveals the active dataset; **Export** downloads a snapshot of in-memory changes. Reset constructs a new object with a clean copy of the literal.
@@ -148,14 +148,12 @@ This is **not** a real LDAPv3 server or a security boundary. Missing features in
 
 ## Tests
 
-With Node.js installed:
+Without any additional installation:
 
-```bash
-node test/ActiveDirectory.test.js
-```
+**Run the regression suites:** Open [`test/index.html`](../test/index.html) in a browser. The dashboard runs the complete suite without Node.js or a server.
 
 Expected: `33 tests passed.`
 
-### Node test runner without CommonJS in the emulator
+### Browser test runner without CommonJS in the emulator
 
-`test/ActiveDirectory.test.js` uses Node's `vm.runInThisContext()` to load the browser script into a test context. `res/AD_CORE.js` itself contains **no** `require()`, `module.exports`, `export`, or wrapper. Browser code uses the global `ActiveDirectory` directly with a classic script tag.
+`test/ActiveDirectory.test.js` is loaded into an independent browser test frame beside `res/AD_CORE.js`. `res/AD_CORE.js` itself contains **no** `require()`, `module.exports`, `export`, or wrapper. Browser code uses the global `ActiveDirectory` directly with a classic script tag.

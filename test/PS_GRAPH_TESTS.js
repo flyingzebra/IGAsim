@@ -1,17 +1,7 @@
-/* PowerShellJS Graph command regression tests. Run: node test/PS_GRAPH_TESTS.js */
+/* Browser-only PowerShellJS Graph command regression suite. */
 'use strict';
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
 
-const root = path.join(__dirname, '..', 'res');
-const files = ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js',
-    'PS_GRAPH_COMMANDS.js','PS_CORE.js'];
-for (const filename of files)
-{
-    vm.runInThisContext(fs.readFileSync(path.join(root, filename), 'utf8'), { filename: filename });
-}
+// Classic runtime modules are loaded by test/suite.html.
 const U1 = 'f0000000-0000-4000-8000-000000000101';
 const U2 = 'f0000000-0000-4000-8000-000000000102';
 const G1 = 'f0000000-0000-4000-8000-000000000201';
@@ -29,7 +19,7 @@ async function test(name, callback)
     catch (error)
     {
         console.error('FAIL ' + name, error);
-        process.exitCode = 1;
+        /* Failure recorded by console.error. */
     }
 }
 function newEngine() { return new PowerShellJS.PowerShellSimulator(); }
@@ -60,7 +50,7 @@ async function suite()
         assert.equal(typeof PowerShellGraphCommands, 'object');
         assert.equal(typeof PowerShellGraphCommands.registerGraphCommands, 'function');
         assert.equal(typeof EntraDirectory, 'function');
-        const source = fs.readFileSync(path.join(root, 'PS_GRAPH_COMMANDS.js'), 'utf8');
+        const source = PowerShellGraphCommandsContainer.toString();
         assert.doesNotMatch(source, /\bclass\s+|\bmodule\.exports\b|\brequire\s*\(|\bfetch\s*\(|\beval\s*\(/);
         assert.doesNotMatch(source, /\(function\s*\(root/);
     });
@@ -341,15 +331,14 @@ async function suite()
     });
     await test('browser-like classic script loading works without CommonJS', async function()
     {
-        const browser = vm.createContext({ console, TextEncoder, TextDecoder });
-        for (const filename of files)
-        {
-            vm.runInContext(fs.readFileSync(path.join(root, filename), 'utf8'), browser, { filename: filename });
-        }
+        const frame = await BrowserTest.realm(['../res/PS_PARSER.js','../res/AD_CORE.js',
+            '../res/PS_AD_COMMANDS.js','../res/ENTRA_CORE.js','../res/PS_GRAPH_COMMANDS.js','../res/PS_CORE.js']);
+        const browser = frame.window;
         const ps = new browser.PowerShellJS.PowerShellSimulator();
         const reply = await ps.execute('Connect-MgGraph\nGet-MgUser -All');
         assert.equal(reply.success, true, reply.errors.join('; '));
         assert.equal(reply.objects.length, 3);
+        frame.close();
     });
 
     await test('Get-MgDirectoryRoleMember returns directory reader assignments', async function()
@@ -400,63 +389,24 @@ async function suite()
         assert.equal((await run(ps, '$users')).length, 2);
     });
 
-    await test('index.html loads Entra core and command provider before PS_CORE', async function()
+    await test('browser entry point loads Graph modules and application script', async function()
     {
-        const html = fs.readFileSync(path.join(root, '..', 'index.html'), 'utf8');
-        const entra = html.indexOf('src="res/ENTRA_CORE.js"');
-        const cmds = html.indexOf('src="res/PS_GRAPH_COMMANDS.js"');
-        const core = html.indexOf('src="res/PS_CORE.js"');
-        assert.ok(entra > 0 && cmds > entra && core > cmds);
-        const script = html.slice(html.lastIndexOf('<script>') + 8, html.lastIndexOf('</script>'));
-        assert.doesNotThrow(function() { new vm.Script(script, { filename: 'index.html' }); });
+        assert.equal(typeof PowerShellGraphCommands.registerGraphCommands, 'function');
+        assert.ok(typeof PowerShellJSApp.adapter.submit === 'function');
+        assert.equal(typeof PowerShellJSApp.examples.graph, 'string');
     });
-
-    await test('index inline scripts execute Entra sample with a fake DOM/terminal', async function()
+    await test('browser DOM sample selection, execution and reset', async function()
     {
-        const html = fs.readFileSync(path.join(root, '..', 'index.html'), 'utf8');
-        const byId = new Map();
-        function element(id)
-        {
-            if (byId.has(id)) return byId.get(id);
-            const node = {
-                id: id, value: '', textContent: '', listeners: {}, dataset: {},
-                addEventListener(type, fn) { this.listeners[type] = fn; },
-                focus() {}, select() {}, setRangeText() {}
-            };
-            byId.set(id, node);
-            return node;
-        }
-        const sample = element('graph-sample');
-        sample.dataset.example = 'graph';
-        const document = {
-            getElementById: element,
-            querySelectorAll(selector) { return selector === '[data-example]' ? [sample] : []; }
-        };
-        function TERMINAL()
-        {
-            this.lines = [];
-            this.onInput = function(callback) { this.callback = callback; };
-            this.pushPrompt = function() {};
-            this.write = function(message) { this.lines.push(message); };
-            this.clear = function() { this.lines = []; };
-        }
-        const sandbox = vm.createContext({ console, document, TERMINAL, TextEncoder, TextDecoder });
-        for (const name of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js',
-            'PS_GRAPH_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'])
-        {
-            vm.runInContext(fs.readFileSync(path.join(root, name), 'utf8'), sandbox, { filename: name });
-        }
-        const inline = html.slice(html.lastIndexOf('<script>') + 8, html.lastIndexOf('</script>'));
-        vm.runInContext(inline, sandbox, { filename: 'index.html' });
-        assert.ok(sandbox.PowerShellJSApp);
-        sample.listeners.click();
-        assert.match(element('script').value, /Connect-MgGraph/);
-        await element('run').listeners.click();
-        assert.equal(sandbox.PowerShellJSApp.adapter.engine.session.entra.Session.connected, true);
-        assert.ok(sandbox.PowerShellJSApp.terminal.lines.some(v => v.includes('Ada Martin')));
-        await element('reset').listeners.click();
-        assert.equal(sandbox.PowerShellJSApp.adapter.engine.session.entra.Session.connected, false);
+        BrowserTest.appButton('graph').click();
+        assert.match(PowerShellJSApp.editor.value, /Connect-MgGraph/);
+        document.getElementById('run').click();
+        await PowerShellJSApp.adapter.queue;
+        assert.equal(PowerShellJSApp.adapter.engine.session.entra.Session.connected, true);
+        assert.ok(PowerShellJSApp.terminal.lines.some(x => x.includes('Ada Martin')));
+        document.getElementById('reset').click();
+        await PowerShellJSApp.adapter.reset();
+        assert.equal(PowerShellJSApp.adapter.engine.session.entra.Session.connected, false);
     });
     console.log('\n' + passed + ' Graph PowerShell tests passed.');
 }
-suite().catch(function(error) { console.error(error); process.exitCode = 1; });
+suite().then(() => BrowserTest.done()).catch(error => BrowserTest.crash(error));

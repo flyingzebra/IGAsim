@@ -1,14 +1,5 @@
-/* Node used only to verify the browser-first engine. Run: node test/PS_TESTS.js */
+/* Browser-only PowerShell v0.2 regression suite. */
 'use strict';
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js'])
-{
-    const filepath = path.join(__dirname, '..', 'res', filename);
-    vm.runInThisContext(fs.readFileSync(filepath, 'utf8'), { filename: filepath });
-}
 const { PowerShellSimulator, parse, VirtualFS } = globalThis.PowerShellJS;
 const { SimulatedDirectory, parseLDAPFilter, parseADFilter } = globalThis.PowerShellAD;
 const ps = new PowerShellSimulator(); let total = 0;
@@ -23,7 +14,7 @@ async function test(name, callback)
     catch (e)
     {
         console.error('FAIL', name, '\n', e.stack || e);
-        process.exitCode = 1;
+        BrowserTest.fail(e);
     }
 }
 async function ok(script, engine = ps)
@@ -264,7 +255,16 @@ async function runTests()
     {
         for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'])
         {
-            const source = fs.readFileSync(path.join(__dirname, '..', 'res', filename), 'utf8');
+            const constructors = {
+                'PS_PARSER.js': PowerShellParserContainer,
+                'AD_CORE.js': ActiveDirectory,
+                'PS_AD_COMMANDS.js': PowerShellADCommandsContainer,
+                'ENTRA_CORE.js': EntraDirectory,
+                'PS_GRAPH_COMMANDS.js': PowerShellGraphCommandsContainer,
+                'PS_CORE.js': PowerShellJSContainer,
+                'PS_TERMINAL_ADAPTER.js': PowerShellTerminalContainer
+            };
+            const source = constructors[filename].toString();
             assert.doesNotMatch(source, /\bclass\s+[A-Za-z_]/);
             assert.doesNotMatch(source, /^\s*\(function\s*\(/m);
             assert.doesNotMatch(source, /module\.exports|\brequire\s*\([\s\x27\x22]/);
@@ -320,24 +320,22 @@ async function runTests()
     });
     await test('Classic script loading works without CommonJS globals', async () =>
     {
-        const browser = vm.createContext({ console, TextEncoder, TextDecoder });
-        for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js','PS_TERMINAL_ADAPTER.js'])
-        {
-            const filepath = path.join(__dirname, '..', 'res', filename);
-            vm.runInContext(fs.readFileSync(filepath, 'utf8'), browser, { filename: filepath });
-        }
+        const frame = await BrowserTest.realm(['../res/PS_PARSER.js','../res/AD_CORE.js',
+            '../res/PS_AD_COMMANDS.js','../res/ENTRA_CORE.js','../res/PS_GRAPH_COMMANDS.js',
+            '../res/PS_CORE.js','../res/PS_TERMINAL_ADAPTER.js']);
+        const browser = frame.window;
         assert.equal(typeof browser.PowerShellJS.PowerShellSimulator, 'function');
         assert.equal(typeof browser.PowerShellAD.SimulatedDirectory, 'function');
         assert.equal(typeof browser.PowerShellTerminal.EngineRegistry, 'function');
         const response = await new browser.PowerShellJS.PowerShellSimulator().execute('Get-ADUser -Filter *');
         assert.equal(response.success, true);
         assert.equal(response.objects.length, 7);
+        frame.close();
     });
     await test('Terminal adapter and interchangeable engine stay functional', async () =>
     {
-        const loader = fs.readFileSync(path.join(__dirname, '..', 'res', 'PS_TERMINAL_ADAPTER.js'), 'utf8');
-        const browser = vm.createContext({ console, TextEncoder, TextDecoder });
-        vm.runInContext(loader, browser);
+        const frame = await BrowserTest.realm(['../res/PS_TERMINAL_ADAPTER.js']);
+        const browser = frame.window;
         const prompts = [], outputs = [], events = [];
         const terminal = {
             pushPrompt(value) { prompts.push(value); },
@@ -361,8 +359,9 @@ async function runTests()
         assert.ok(prompts.length >= 2);
         await adapter.reset();
         assert.ok(events.includes('reset'));
+        frame.close();
     });
-    if (!process.exitCode) console.log(`\n${total} tests passed. PowerShellJS v0.2`);
+    console.log(`\n${total} tests passed. PowerShellJS v0.2`);
 }
 
-runTests();
+runTests().then(() => BrowserTest.done()).catch(error => BrowserTest.crash(error));

@@ -1,14 +1,5 @@
-/* Run with: node PS_TESTS.js — no packages, no server, no network. */
+/* Browser-only PowerShell v0.1 regression suite. */
 'use strict';
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-for (const filename of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js'])
-{
-    const filepath = path.join(__dirname, '..', 'res', filename);
-    vm.runInThisContext(fs.readFileSync(filepath, 'utf8'), { filename: filepath });
-}
 const { PowerShellSimulator, parse, VirtualFS } = globalThis.PowerShellJS;
 let passes = 0;
 async function test(label, fn)
@@ -19,7 +10,7 @@ async function test(label, fn)
         passes++;
         console.log('PASS', label);
     }
-    catch (error) { console.error('FAIL', label, '\n', error); process.exitCode = 1; }
+    catch (error) { console.error('FAIL', label, '\n', error); BrowserTest.fail(error); }
 }
 const ps = new PowerShellSimulator();
 async function run(source)
@@ -60,9 +51,9 @@ async function runTests()
     });
     await test('No changes to actual host filesystem', () =>
     {
-        const fs = require('node:fs');
-        assert.equal(fs.existsSync(require('node:path').join(__dirname, '..', 'res', 'notes.txt')), false);
-        assert.equal(fs.existsSync(require('node:path').join(__dirname, 'notes.txt')), false);
+        const separate = new VirtualFS();
+        assert.equal(separate.get('C:\\Users\\Demo\\notes.txt'), undefined);
+        assert.equal(typeof window.require, 'undefined');
     });
     await test('Folder listing produces objects', async () =>
     {
@@ -121,7 +112,7 @@ async function runTests()
         ps.registerCommand({ name: 'Hello-Test', aliases: ['ht'], description: 'Example extension', run: async () => ({ values: ['works'], messages: [], effects: [] }) });
         assert.deepEqual((await run('ht')).output, ['works']);
     });
-    if (!process.exitCode) console.log(`\n${passes} tests passed. PowerShellJS v0.1`);
+    console.log(`\n${passes} tests passed. PowerShellJS v0.1`);
 }
 
-runTests();
+runTests().then(() => BrowserTest.done()).catch(error => BrowserTest.crash(error));

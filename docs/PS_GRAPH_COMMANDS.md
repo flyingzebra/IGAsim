@@ -102,13 +102,6 @@ All writes are made through `ENTRA_CORE.Graph()` and are visible immediately to 
 
 Run from the repository root:
 
-```bash
-node test/PS_GRAPH_TESTS.js
-node test/PS_TESTS.js
-node test/PS_TESTS_v01.js
-node test/ENTRA_CORE.test.js
-node test/ActiveDirectory.test.js
-node test/AD_INTEGRATION_SMOKE.js
-```
+**Run the regression suites:** Open [`test/index.html`](../test/index.html) in a browser. The dashboard runs the complete suite without Node.js or a server.
 
-`PS_GRAPH_TESTS.js` covers session behavior, routing to Graph, query/filter/paging, CRUD, group references, failure cases, reset, independent instances, classic browser scripts and continued on-prem AD support. A fake-DOM/terminal smoke test also verifies that the HTML Entra example button runs through the adapter. A full graphical browser check still needs to be done locally.
+`PS_GRAPH_TESTS.js` covers session behavior, routing to Graph, query/filter/paging, CRUD, group references, failure cases, reset, independent instances, classic browser scripts and continued on-prem AD support. A browser DOM fixture also verifies that the same application bootstrap as `index.html` executes the Entra example button through the adapter. A full graphical browser check still needs to be done locally.

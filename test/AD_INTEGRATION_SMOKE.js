@@ -1,6 +1,5 @@
 'use strict';
-const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),assert=require('node:assert/strict');
-for(const name of ['PS_PARSER.js','AD_CORE.js','PS_AD_COMMANDS.js','ENTRA_CORE.js','PS_GRAPH_COMMANDS.js','PS_CORE.js'])vm.runInThisContext(fs.readFileSync(path.join(__dirname,'..','res',name),'utf8'),{filename:name});
+/* Browser test: required runtime scripts are loaded by test/suite.html. */
 const {PowerShellSimulator}=globalThis.PowerShellJS;
 (async()=>{
 let tests=0;function check(x){tests++;console.log('PASS '+x)}
@@ -28,4 +27,4 @@ assert.equal((await ps.execute('Get-ADGroupMember -Identity APP_Reporting -Recur
 ps.reset();assert.equal(ps.session.directory.AD.LDAP('search',{filter:'(department=Test)'}).count,0);check('reset restores PowerShell fixture');
 const separate=new ActiveDirectory();assert.equal(separate.DB.domain,'contoso.local');assert.equal(separate.LDAP('search',{filter:'(objectCategory=person)'}).count,3);check('standalone fixture preserved');
 console.log(tests+' integration checks passed');
-})().catch(e=>{console.error(e.stack);process.exitCode=1});
+})().then(() => BrowserTest.done()).catch(error => BrowserTest.crash(error));

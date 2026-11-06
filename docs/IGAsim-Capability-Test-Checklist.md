@@ -37,22 +37,13 @@
 
 **Immediately testable at some level:** 27 / 118 capabilities (4 ready; 23 partial). All other 91 are backlog items, not passed tests.
 
-## 1. Execute the existing regression suites
+## 1. Execute the browser regression suites
 
-From the repository root (Node.js is needed for **tests only**, not for `index.html`). Run the complete suite via `node test/run-all.js`, or run individual files:
+Open **[`test/index.html`](../test/index.html)** directly from your local IGAsim checkout. The dashboard runs all eight suites, and you can select **Run all suites** again to repeat them. **No Node.js, npm or web server is required.** The browser tests use the same classic JavaScript runtime modules in `res/`.
 
-```bash
-node test/PS_TESTS.js
-node test/PS_TESTS_v01.js
-node test/ENTRA_CORE.test.js
-node test/PS_GRAPH_TESTS.js
-node test/PS_GRAPH_SAMPLES.test.js
-node test/ENTITLEMENT_TESTS.js
-node test/ActiveDirectory.test.js
-node test/AD_INTEGRATION_SMOKE.js
-```
+The eight test files are `test/PS_TESTS.js`, `test/PS_TESTS_v01.js`, `test/ENTRA_CORE.test.js`, `test/PS_GRAPH_TESTS.js`, `test/PS_GRAPH_SAMPLES.test.js`, `test/ENTITLEMENT_TESTS.js`, `test/ActiveDirectory.test.js`, and `test/AD_INTEGRATION_SMOKE.js`. They are launched through the dashboard rather than executed as standalone command-line scripts.
 
-**Verified on the matching local code snapshot:** 50 + 18 + 53 + 54 + 17 + 32 + 33 + 14 = **271 checks passed**. This is code-level regression evidence, not acceptance of all 118 IGA capabilities.
+**Verified in a browser-script execution harness on the matching code snapshot:** 50 + 18 + 53 + 54 + 17 + 32 + 33 + 14 = **271 checks passed**. The harness used inlined script sources because the verification environment blocks local-file navigation; the actual `file://` dashboard still needs a local interactive check. This is simulator regression evidence, not acceptance of all 118 IGA capabilities.
 
 ## 2. Test scenarios and evidence map
 
@@ -69,7 +60,7 @@ node test/AD_INTEGRATION_SMOKE.js
 | **T09** | Access package list/CRUD | Ready (read/write) | Run **Package read/create/update/delete**, and **Lifecycle** examples. | Package CRUD works, returned IDs are usable, and reset restores seed. | `test/ENTITLEMENT_TESTS.js`; `examples/graph/entitlement/{read,write}/govPackage*.ps1` | RBM-02, RBM-11, GOV-03 |
 | **T10** | Catalog-to-package mapping and integrity | Ready (read-only / negative) | Read catalogs with `$expand=accessPackages`, packages with `$expand=catalog`, and try invalid catalog IDs. | A package references exactly one catalog; invalid refs and moving packages are rejected. | `test/ENTITLEMENT_TESTS.js`; `govCatalogRead.ps1`, `govPackageRead.ps1` | RBM-03, RBM-05 |
 | **T11** | Negative behavior and reset isolation | Ready (negative) | Attempt unsupported Graph paths/fields, delete nonempty catalog, and instantiate separate tenants. | Structured error codes, no cross-instance writes and reset restoring fictional seeds. | `test/ENTITLEMENT_TESTS.js`, `test/ENTRA_CORE.test.js`, `test/PS_GRAPH_TESTS.js` | Session reset (not PRO-14) |
-| **T12** | Browser script selection | Ready (simulated DOM) | Click examples in `index.html`; run; verify terminal result and category/buttons. | HTML inline JavaScript passes syntax; sample button fills editor and Run dispatches to simulator. | `test/PS_GRAPH_SAMPLES.test.js`, `test/ENTITLEMENT_TESTS.js` | UI delivery for all ready examples |
+| **T12** | Browser script selection | Ready (browser DOM) | Click examples in `index.html`; run; verify terminal result and category/buttons. | Browser application bootstrap loads; sample button fills editor and Run dispatches to simulator. | `test/PS_GRAPH_SAMPLES.test.js`, `test/ENTITLEMENT_TESTS.js` | UI delivery for all ready examples |
 
 ### Manual execution checklist (intentionally unchecked)
 
@@ -256,7 +247,7 @@ Each row is mapped to a capability ID in `docs/CAPABILITIES.md`. **Evidence/next
 
 | Done? | Gate | Current assessment / acceptance requirement |
 |---|---|---|
-| `[x]` | Offline PowerShell/LDAP/Graph modules | Separate browser-first AD and Graph backends; runtime simulated; tested by current Node suites. |
+| `[x]` | Offline PowerShell/LDAP/Graph modules | Separate browser-first AD and Graph backends; runtime simulated; tested by current browser suites. |
 | `[x]` | Fixture isolation and reset | Independent instances, read/write behavior and reset covered by tests. |
 | `[x]` | Catalog/package metadata and relationships | Catalog/package CRUD, guarded deletes and catalog parent mapping. |
 | `[ ]` | Package resource role composition | No catalog resource and access-package role/scope assignments. |
