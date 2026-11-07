@@ -14,10 +14,17 @@ h1 {font-size:1.6rem;letter-spacing:-.02em;margin:0 0 6px}
 .mini {font-size:.75rem;color:var(--muted)}
 .terminal-shell {height:520px;min-height:240px;background:#222}
 #terminal {height:100%;width:100%;padding:13px 14px;font-size:13px;font-weight:normal}
-#terminal.VanillaTerm .container {height:100%}
+#terminal.VanillaTerm .container {height:100%; width:100%; overflow-x:auto; overflow-y:auto;}
+/* PowerShell-specific output viewport: keep long table rows and directory paths
+   on a single line. The existing terminal panel is never widened. */
+#terminal.VanillaTerm output {display:block; width:max-content; min-width:100%;}
+#terminal.VanillaTerm output pre,
+#terminal.VanillaTerm output span,
+#terminal.VanillaTerm output .line {white-space:pre; overflow-wrap:normal; word-break:normal;}
+#terminal.VanillaTerm output span.serial-stream {white-space:pre; overflow-wrap:normal;}
 #terminal.VanillaTerm .command {min-height:20px}
 #terminal.VanillaTerm .command .prompt {white-space:pre}
-#terminal.VanillaTerm output .line {display:flex;white-space:pre-wrap;overflow-wrap:anywhere;align-items:flex-start}
+#terminal.VanillaTerm output .line {display:flex;white-space:pre;overflow-wrap:normal;align-items:flex-start;width:max-content}
 #terminal.VanillaTerm output .line .prompt {flex-shrink:0}
 #terminal.VanillaTerm output span.serial-stream {line-height:1.55}
 .editor {width:100%;min-height:345px;resize:vertical;border:0;outline:0;background:#141b28;color:#edf3ff;padding:17px;font:13px/1.6 "SFMono-Regular",Consolas,"Courier New",monospace;tab-size:2}

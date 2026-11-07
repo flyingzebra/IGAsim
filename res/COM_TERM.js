@@ -137,14 +137,29 @@ function TERMINAL(props)
 
   var self = this;
 
+  // Bring the input back into vertical view without changing horizontal
+  // scrollLeft. scrollIntoView() can also pan sideways, pulling readers away
+  // from a wide table or long directory path they are inspecting.
+  function scrollCommandVerticallyIntoView()
+  {
+    var viewport = self._o.DOM.container;
+    var commandLine = self._o.DOM.command;
+    if (!viewport || !commandLine) return;
+    var viewportRect = viewport.getBoundingClientRect();
+    var lineRect = commandLine.getBoundingClientRect();
+    if (lineRect.bottom > viewportRect.bottom)
+      viewport.scrollTop += lineRect.bottom - viewportRect.bottom;
+    else if (lineRect.top < viewportRect.top)
+      viewport.scrollTop -= viewportRect.top - lineRect.top;
+  }
+
   function resetCommand(prefill) 
   {
     self._o.DOM.input.value = prefill?prefill:"";
     self._o.DOM.command.classList.remove("input");
     self._o.DOM.command.classList.remove("hidden");
 
-    if (typeof self._o.DOM.input.scrollIntoView === "function")
-      self._o.DOM.input.scrollIntoView({ block: "nearest" });
+    scrollCommandVerticallyIntoView();
   }
 
   function handleKeyUp(event) 
@@ -895,7 +910,7 @@ function TERMINAL(props)
       // A live stream may continue below a user's selection.  Do not pull the
       // viewport back to the command line until that selection is released.
       if (outputSelectionActive()) return;
-      self._o.DOM.input.scrollIntoView({ block: "nearest" });
+      scrollCommandVerticallyIntoView();
     }, 0);
   });
   observer.observe(self._o.DOM.output, { childList: true, subtree: true });

@@ -7,5 +7,6 @@ var IGAsimTestSuites = [
     'ENTRA_CORE.test.js',
     'PS_GRAPH_TESTS.js',
     'PS_GRAPH_SAMPLES.test.js',
-    'ENTITLEMENT_TESTS.js'
+    'ENTITLEMENT_TESTS.js',
+    'TERMINAL_SCROLL.test.js'
 ];
