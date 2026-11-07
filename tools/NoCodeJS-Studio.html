@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NoCode JS Workflow Studio — IGAsim</title>
+  <meta name="description" content="Design and run simulated identity governance workflows locally with NoCode JS and IGAsim.">
+  <link rel="stylesheet" href="../res/PA_APP.css">
+  <link rel="stylesheet" href="NoCodeJS-Studio.css">
+</head>
+<body>
+<main class="studio" id="pa-workflows">
+  <header class="studio-head">
+    <div class="studio-title">
+      <div class="eyebrow">IGAsim · Identity Automation</div>
+      <h1>NoCode JS <span>Workflow Studio</span> <small>v0.2</small></h1>
+      <p>Create, test and inspect simulated Power Automate-style workflows. No Microsoft sign-in, no Node.js, no backend.</p>
+    </div>
+    <div class="head-actions">
+      <a class="back-link" href="../index.html">PowerShell simulator</a>
+      <a class="back-link" href="../test/index.html">Regression tests</a>
+    </div>
+  </header>
+
+  <section class="studio-metrics" aria-label="Sandbox statistics">
+    <div><span>AD objects</span><strong id="studio-ad-count">—</strong></div>
+    <div><span>Entra users</span><strong id="studio-entra-count">—</strong></div>
+    <div><span>Access catalogs</span><strong id="studio-catalog-count">—</strong></div>
+    <div><span>Access packages</span><strong id="studio-package-count">—</strong></div>
+    <div><span>Graph session</span><strong id="studio-graph-connected">—</strong></div>
+  </section>
+
+  <section class="studio-controls" aria-label="Workflow actions">
+    <div class="example-picker">
+      <label for="studio-template">Workflow example</label>
+      <select id="studio-template" aria-label="Choose a workflow template">
+        <option value="inventory">Hybrid identity inventory</option>
+      </select>
+    </div>
+    <button id="studio-load" type="button">Load example</button>
+    <button id="pa-run" class="button-primary" type="button">▶ Run workflow</button>
+    <button id="studio-reset" type="button">Reset identity sandbox</button>
+    <div class="studio-status" id="pa-status" role="status" aria-live="polite">Ready</div>
+  </section>
+
+  <div class="studio-grid">
+    <section class="studio-main" aria-label="Workflow editor">
+      <div class="section-bar">
+        <div><h2>Workflow designer</h2><p>Drag actions into your flow and edit step properties.</p></div>
+        <button id="pa-visual-toggle" type="button">Open visual designer</button>
+      </div>
+      <div class="designer-intro" id="studio-visual-intro">
+        <div class="designer-icon" aria-hidden="true">◇</div>
+        <h3>Visual workflow builder</h3>
+        <p>The NoCode JS canvas is loaded on demand. An internet connection is currently required for its pinned editor assets. The JSON editor and runtime remain available offline.</p>
+        <button type="button" id="studio-open-visual" class="button-primary">Open NoCode JS canvas</button>
+      </div>
+      <div id="pa-visual" class="pa-visual" aria-label="NoCode JS editor canvas">
+        <div id="pa-designer"></div>
+      </div>
+      <div class="section-bar section-json">
+        <div><h2>Workflow JSON</h2><p>NoCode JS-compatible definition; all actions execute locally.</p></div>
+        <div class="editor-buttons">
+          <button type="button" id="pa-apply">Apply &amp; validate</button>
+          <button type="button" id="pa-export">Export JSON</button>
+          <label class="button-like" for="pa-import">Import JSON<input type="file" id="pa-import" accept=".json,application/json"></label>
+          <button type="button" id="pa-example">Restore default</button>
+        </div>
+      </div>
+      <label for="pa-json" class="sr-only">Workflow JSON source</label>
+      <textarea id="pa-json" class="studio-code" spellcheck="false" aria-label="Workflow JSON source"></textarea>
+      <p class="editor-note">Changes to the JSON take effect when you click Apply &amp; validate or Run workflow. A running flow may change simulated identity data; reset the sandbox to restore it.</p>
+    </section>
+
+    <aside class="studio-side">
+      <section class="side-section">
+        <div class="section-bar"><div><h2>Workflow outline</h2><p id="studio-step-count">0 steps</p></div><button id="studio-refresh-outline" type="button">Refresh</button></div>
+        <ol class="outline" id="studio-outline"></ol>
+      </section>
+      <section class="side-section">
+        <div class="section-bar"><div><h2>Execution trace</h2><p>Latest run · simulated identity environment</p></div><button id="studio-clear" type="button">Clear</button></div>
+        <div class="run-summary" id="studio-run-summary">Run a workflow to inspect its steps and output.</div>
+        <ol class="execution-timeline" id="studio-timeline"></ol>
+        <details class="trace-details"><summary>Raw execution output</summary><pre id="pa-output"></pre></details>
+        <details class="trace-details"><summary>Last run state</summary><pre id="studio-state">Not run yet.</pre></details>
+      </section>
+      <section class="side-section help">
+        <h2>Simulation boundaries</h2>
+        <p>Supported actions: PowerShell, Graph GET/POST/PATCH/DELETE, variables, logs, and conditional branches. A manual trigger starts each run.</p>
+        <p>No actual AD, Graph, approval, email or webhook traffic is sent. All identity changes stay in browser memory and do not persist after reload.</p>
+      </section>
+    </aside>
+  </div>
+  <footer class="studio-footer">NoCode JS Sequential Workflow Designer 0.40.4 (MIT) · Visual editor supplied from CDN on demand · Core workflow execution offline · IGAsim fictional data</footer>
+</main>
+<script src="../res/PS_PARSER.js"></script>
+<script src="../res/AD_CORE.js"></script>
+<script src="../res/PS_AD_COMMANDS.js"></script>
+<script src="../res/ENTRA_CORE.js"></script>
+<script src="../res/PS_GRAPH_COMMANDS.js"></script>
+<script src="../res/PS_CORE.js"></script>
+<script src="../res/PA_CORE.js"></script>
+<script src="../res/PA_LIBRARY.js"></script>
+<script>
+  // Standalone host adapter: shares a single fresh in-memory PowerShell/AD/Entra engine.
+  // PA_APP.js expects the same adapter contract as the main PowerShell interface.
+  globalThis.PowerShellJSApp = {adapter:{engine:new PowerShellJS.PowerShellSimulator()}};
+</script>
+<script src="../res/PA_APP.js"></script>
+<script src="NoCodeJS-Studio.js"></script>
+</body>
+</html>
