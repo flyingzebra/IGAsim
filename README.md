@@ -122,6 +122,10 @@ Get-LDAPQueryLog
 - Command extensions are **JavaScript loaded into the host page**; only load trusted extensions. Do not treat this as a sandbox for untrusted JavaScript modules.
 - A script that works here may behave differently on Windows PowerShell 5.1 or PowerShell 7. Do not assume production correctness.
 
+# Experimentation
+
+<a href="https://flyingzebra.github.io/IGAsim/tools/TOOLS_CATALOG.html"><img src="/res/VintageLab256.png?raw=true" width=100% /></a>
+
 ## Testing
 
 Run all eight suites by opening **[`test/index.html`](test/index.html)** directly in Chrome, Edge, Firefox or Safari, and clicking **Run all suites**. The page shows pass/fail counts and per-test details. The test modules are in [`test/`](test/README.md), and the runtime modules stay in `res/`. No server, command line or Node.js is required.
