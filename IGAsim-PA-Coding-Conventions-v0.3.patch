@@ -1,0 +1,1687 @@
+diff --git a/docs/PA_CONVENTIONS_REVIEW.md b/docs/PA_CONVENTIONS_REVIEW.md
+new file mode 100644
+index 0000000..554bdfa
+--- /dev/null
++++ b/docs/PA_CONVENTIONS_REVIEW.md
+@@ -0,0 +1,21 @@
++# PowerAutomateJS coding conventions review
++
++The NoCode JS integration was initially implemented with immediate invocation wrappers, prototype methods, two-space indentation and compact multi-statement blocks. Those patterns contradicted `docs/CODING_CONVENTIONS.md`.
++
++This update covers all three new JavaScript modules in `res/`:
++
++| File | Browser container | Public interface |
++|---|---|---|
++| `res/PA_CORE.js` | `function PowerAutomateCore()` | `var PowerAutomateJS = new PowerAutomateCore()`; `WorkflowEngine`, `assertValid`, `sampleDefinition`, `interpolate` |
++| `res/PA_LIBRARY.js` | `function NoCodeWorkflowLibraryContainer()` | `var NoCodeWorkflowLibrary = new NoCodeWorkflowLibraryContainer()`; `list`, `get` |
++| `res/PA_APP.js` | `function PowerAutomateApp(powerShellApp)` | `var PowerAutomateJSApp`, initialized only when the UI and its shared PowerShell host exist; `engine`, `getDefinition`, `setDefinition` |
++
++Each container uses four-space indentation, Allman braces for executable blocks, direct `this` methods and instance-owned mutable state. Helpers live inside the constructors; no IIFEs, factories for defining containers, runtime `globalThis` assignment, `class`, module exports, or prototype-forwarding methods are required. The optional vendor-supplied NoCode JS UMD bundle is a third-party dependency and is not rewritten to match first-party conventions.
++
++The public API is retained for `tools/NoCodeJS-Studio.js` and existing regression suites; workflow definitions, execution behavior, Graph/PowerShell dispatch and optional CDN editor loading are not intentionally altered. This is primarily a structural and formatting refactor.
++
++## Checks
++
++`test/PA_CONVENTIONS.test.js` validates named constructors, own instance methods, API stability, multi-instance isolation, cloned library datasets and absence of runtime module dependencies. It is registered with the existing browser suite dashboard in `test/index.html`, alongside `PA_TESTS.js`, `PA_LIBRARY.test.js` and `PA_STUDIO.test.js`.
++
++Open `test/index.html` via `file://` to run tests; no Node.js is needed for the application or browser regressions.
+diff --git a/res/PA_APP.js b/res/PA_APP.js
+index 7ad717e..3403836 100644
+--- a/res/PA_APP.js
++++ b/res/PA_APP.js
+@@ -1,221 +1,432 @@
+-/* IGAsim PowerAutomateJS v0.1: optional NoCode JS Sequential Workflow Designer UI.
+- * NoCode JS 0.40.4 UMD loads only when the user clicks "Visual designer".
+- * When offline, the JSON editor and offline PA_CORE runner remain fully usable.
++/* PowerAutomateJS — optional NoCode JS workflow designer and JSON editor.
++ * Browser-first constructor, with UI state and handlers owned by this instance.
++ * NoCode JS's upstream UMD library is loaded on demand; this adapter uses no wrapper.
+  */
+-(function () {
+-  'use strict';
+-  const psApp = globalThis.PowerShellJSApp;
+-  const api = globalThis.PowerAutomateJS;
+-  if (!psApp || !api || !document.getElementById('pa-workflows')) return;
+-
+-  const $ = id => document.getElementById(id);
+-  const json = $('pa-json'), status = $('pa-status'), output = $('pa-output');
+-  const visual = $('pa-visual'), container = $('pa-designer'), runButton = $('pa-run');
+-  const engine = new api.WorkflowEngine({ powershell: psApp.adapter.engine });
+-  const CDN = 'https://cdn.jsdelivr.net/npm/sequential-workflow-designer@0.40.4';
+-  let definition = api.sampleDefinition();
+-  let designer = null;
+-  let loading = false;
+-  let executing = false;
+-
+-  function message(text) { status.textContent = text; }
+-  function renderJSON() { json.value = JSON.stringify(definition, null, 2); }
+-  function setDefinition(candidate) {
+-    api.assertValid(candidate);
+-    // Clone user input; NoCode JS may mutate its own model when editing.
+-    definition = JSON.parse(JSON.stringify(candidate));
+-    renderJSON();
+-    if (designer) createDesigner();
+-    message('Definition validated.');
+-  }
+-  function step(id, type, name, properties) {
+-    return { id, componentType: 'task', type, name, properties: properties || {} };
+-  }
+-  function toolboxGroups() {
+-    return [
+-      { name: 'Identity actions', steps: [
+-        step(null, 'powershell', 'Run PowerShell', { script: 'Get-ADUser -Filter *' }),
+-        step(null, 'graph', 'Graph GET', { method: 'GET', uri: '/v1.0/users', body: '' }),
+-        step(null, 'graph', 'Graph POST', { method: 'POST', uri: '/v1.0/identityGovernance/entitlementManagement/catalogs', body: '{"displayName":"New catalog"}' })
+-      ] },
+-      { name: 'Flow control', steps: [
+-        step(null, 'setVariable', 'Set variable', { name: 'result', source: 'literal', value: 'example' }),
+-        step(null, 'log', 'Log', { message: 'Workflow step complete' }),
+-        { id: null, componentType: 'switch', type: 'condition', name: 'Condition',
+-          properties: { path: 'lastStatus', operator: 'eq', value: '200' },
+-          branches: { true: [], false: [] } }
+-      ] }
+-    ];
+-  }
+-  function editorInput(box, label, value, multiline, onChange, readonly) {
+-    const lbl = document.createElement('label');
+-    lbl.textContent = label;
+-    const input = document.createElement(multiline ? 'textarea' : 'input');
+-    if (!multiline) input.type = 'text';
+-    input.value = value == null ? '' : String(value);
+-    input.disabled = Boolean(readonly);
+-    input.addEventListener('input', () => onChange(input.value));
+-    box.append(lbl, input);
+-  }
+-  function editorSelect(box, label, value, choices, onChange, readonly) {
+-    const lbl = document.createElement('label'); lbl.textContent = label;
+-    const select = document.createElement('select');
+-    choices.forEach(key => {
+-      const opt = document.createElement('option'); opt.value = key; opt.textContent = key;
+-      select.appendChild(opt);
+-    });
+-    select.value = value || choices[0]; select.disabled = Boolean(readonly);
+-    select.addEventListener('change', () => onChange(select.value));
+-    box.append(lbl, select);
+-  }
+-  function editStep(s, context, _definition, readonly) {
+-    const box = document.createElement('div');
+-    const update = (key, value) => { s.properties[key] = value; context.notifyPropertiesChanged(); };
+-    editorInput(box, 'Step name', s.name, false,
+-      value => { s.name = value; context.notifyNameChanged(); }, readonly);
+-    if (s.type === 'trigger') {
+-      const note = document.createElement('p'); note.textContent = 'Manual trigger (fixed in v0.1).'; box.appendChild(note);
+-    } else if (s.type === 'powershell') {
+-      editorInput(box, 'PowerShell script (simulated)', s.properties.script, true, value => update('script', value), readonly);
+-    } else if (s.type === 'graph') {
+-      editorSelect(box, 'Method', s.properties.method, ['GET','POST','PATCH','DELETE'], value => update('method',value), readonly);
+-      editorInput(box, 'Graph URI (local /v1.0/...)', s.properties.uri, false, value => update('uri', value), readonly);
+-      editorInput(box, 'JSON body (POST/PATCH)', s.properties.body, true, value => update('body',value), readonly);
+-    } else if (s.type === 'setVariable') {
+-      editorInput(box, 'Variable name', s.properties.name, false, value => update('name',value), readonly);
+-      editorSelect(box, 'Value source', s.properties.source || 'literal', ['literal','path'], value => update('source',value), readonly);
+-      editorInput(box, 'Value or state path', s.properties.value, true, value => update('value',value), readonly);
+-    } else if (s.type === 'condition') {
+-      editorInput(box, 'State path (e.g. lastStatus)', s.properties.path, false, value => update('path',value), readonly);
+-      editorSelect(box, 'Operator', s.properties.operator, ['eq','ne','gt','gte','lt','lte','exists','notExists','includes'], value => update('operator',value), readonly);
+-      editorInput(box, 'Compare to', s.properties.value, false, value => update('value',value), readonly);
+-    } else if (s.type === 'log') {
+-      editorInput(box, 'Message (${variables.x}, ${lastStatus})', s.properties.message, true, value => update('message',value), readonly);
++function PowerAutomateApp(powerShellApp)
++{
++    'use strict';
++
++    const api = PowerAutomateJS;
++    const CDN = 'https://cdn.jsdelivr.net/npm/sequential-workflow-designer@0.40.4';
++    const json = document.getElementById('pa-json');
++    const status = document.getElementById('pa-status');
++    const output = document.getElementById('pa-output');
++    const visual = document.getElementById('pa-visual');
++    const container = document.getElementById('pa-designer');
++    const runButton = document.getElementById('pa-run');
++    let definition = api.sampleDefinition();
++    let designer = null;
++    let loading = false;
++    let executing = false;
++
++    this.engine = new api.WorkflowEngine({ powershell: powerShellApp.adapter.engine });
++    const engine = this.engine;
++
++    function element(id) { return document.getElementById(id); }
++    function message(value) { status.textContent = value; }
++    function renderJSON() { json.value = JSON.stringify(definition, null, 2); }
++
++    function setDefinition(candidate)
++    {
++        api.assertValid(candidate);
++        // The designer mutates its model; keep an independent JSON copy.
++        definition = JSON.parse(JSON.stringify(candidate));
++        renderJSON();
++        if (designer)
++        {
++            createDesigner();
++        }
++        message('Definition validated.');
+     }
+-    return box;
+-  }
+-  function createDesigner() {
+-    if (!globalThis.sequentialWorkflowDesigner) return;
+-    // Drop the old canvas and attach a new one only when importing a different JSON definition.
+-    container.replaceChildren();
+-    const Designer = globalThis.sequentialWorkflowDesigner.Designer;
+-    designer = Designer.create(container, JSON.parse(JSON.stringify(definition)), {
+-      theme: 'light', undoStackSize: 20,
+-      toolbox: { groups: toolboxGroups() },
+-      steps: {
+-        // The trigger is fixed in the sample; adding another must be prevented at validation time.
+-        isDeletable: s => s.type !== 'trigger',
+-        isDraggable: s => s.type !== 'trigger',
+-        isDuplicable: s => s.type !== 'trigger',
+-        iconUrlProvider: () => 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"%3E%3Ccircle cx="12" cy="12" r="9" fill="%232a678b"/%3E%3Cpath d="M8 12h8M12 8v8" stroke="white" stroke-width="2"/%3E%3C/svg%3E'
+-      },
+-      validator: {
+-        root: d => { try { api.assertValid(d); return true; } catch (_) { return false; } }
+-      },
+-      editors: {
+-        rootEditorProvider: () => { const el = document.createElement('p'); el.textContent = 'Select a workflow step to configure it.'; return el; },
+-        stepEditorProvider: editStep
+-      },
+-      controlBar: true, contextMenu: true
+-    });
+-    designer.onDefinitionChanged.subscribe(() => {
+-      definition = designer.getDefinition();
+-      renderJSON();
+-      try { api.assertValid(definition); message('Visual definition valid.'); }
+-      catch (error) { message('Fix workflow: ' + error.message); }
++
++    function step(id, type, name, properties)
++    {
++        return { id, componentType: 'task', type, name, properties: properties || {} };
++    }
++
++    function toolboxGroups()
++    {
++        return [
++            {
++                name: 'Identity actions',
++                steps: [
++                    step(null, 'powershell', 'Run PowerShell', {
++                        script: 'Get-ADUser -Filter *'
++                    }),
++                    step(null, 'graph', 'Graph GET', {
++                        method: 'GET', uri: '/v1.0/users', body: ''
++                    }),
++                    step(null, 'graph', 'Graph POST', {
++                        method: 'POST',
++                        uri: '/v1.0/identityGovernance/entitlementManagement/catalogs',
++                        body: '{"displayName":"New catalog"}'
++                    })
++                ]
++            },
++            {
++                name: 'Flow control',
++                steps: [
++                    step(null, 'setVariable', 'Set variable', {
++                        name: 'result', source: 'literal', value: 'example'
++                    }),
++                    step(null, 'log', 'Log', { message: 'Workflow step complete' }),
++                    {
++                        id: null,
++                        componentType: 'switch',
++                        type: 'condition',
++                        name: 'Condition',
++                        properties: { path: 'lastStatus', operator: 'eq', value: '200' },
++                        branches: { true: [], false: [] }
++                    }
++                ]
++            }
++        ];
++    }
++
++    function editorInput(box, label, value, multiline, onChange, readonly)
++    {
++        const heading = document.createElement('label');
++        heading.textContent = label;
++        const input = document.createElement(multiline ? 'textarea' : 'input');
++        if (!multiline)
++        {
++            input.type = 'text';
++        }
++        input.value = value == null ? '' : String(value);
++        input.disabled = Boolean(readonly);
++        input.addEventListener('input', () => onChange(input.value));
++        box.append(heading, input);
++    }
++
++    function editorSelect(box, label, value, choices, onChange, readonly)
++    {
++        const heading = document.createElement('label');
++        heading.textContent = label;
++        const select = document.createElement('select');
++        choices.forEach(key =>
++        {
++            const option = document.createElement('option');
++            option.value = key;
++            option.textContent = key;
++            select.appendChild(option);
++        });
++        select.value = value || choices[0];
++        select.disabled = Boolean(readonly);
++        select.addEventListener('change', () => onChange(select.value));
++        box.append(heading, select);
++    }
++
++    function editStep(current, context, unusedDefinition, readonly)
++    {
++        const box = document.createElement('div');
++        function update(key, value)
++        {
++            current.properties[key] = value;
++            context.notifyPropertiesChanged();
++        }
++
++        editorInput(box, 'Step name', current.name, false, value =>
++        {
++            current.name = value;
++            context.notifyNameChanged();
++        }, readonly);
++
++        if (current.type === 'trigger')
++        {
++            const note = document.createElement('p');
++            note.textContent = 'Manual trigger (fixed in v0.1).';
++            box.appendChild(note);
++        }
++        else if (current.type === 'powershell')
++        {
++            editorInput(box, 'PowerShell script (simulated)', current.properties.script, true,
++                value => update('script', value), readonly);
++        }
++        else if (current.type === 'graph')
++        {
++            editorSelect(box, 'Method', current.properties.method,
++                ['GET','POST','PATCH','DELETE'], value => update('method', value), readonly);
++            editorInput(box, 'Graph URI (local /v1.0/...)', current.properties.uri, false,
++                value => update('uri', value), readonly);
++            editorInput(box, 'JSON body (POST/PATCH)', current.properties.body, true,
++                value => update('body', value), readonly);
++        }
++        else if (current.type === 'setVariable')
++        {
++            editorInput(box, 'Variable name', current.properties.name, false,
++                value => update('name', value), readonly);
++            editorSelect(box, 'Value source', current.properties.source || 'literal',
++                ['literal','path'], value => update('source', value), readonly);
++            editorInput(box, 'Value or state path', current.properties.value, true,
++                value => update('value', value), readonly);
++        }
++        else if (current.type === 'condition')
++        {
++            editorInput(box, 'State path (e.g. lastStatus)', current.properties.path, false,
++                value => update('path', value), readonly);
++            editorSelect(box, 'Operator', current.properties.operator,
++                ['eq','ne','gt','gte','lt','lte','exists','notExists','includes'],
++                value => update('operator', value), readonly);
++            editorInput(box, 'Compare to', current.properties.value, false,
++                value => update('value', value), readonly);
++        }
++        else if (current.type === 'log')
++        {
++            editorInput(box, 'Message (${variables.x}, ${lastStatus})', current.properties.message,
++                true, value => update('message', value), readonly);
++        }
++        return box;
++    }
++
++    function createDesigner()
++    {
++        if (typeof sequentialWorkflowDesigner === 'undefined')
++        {
++            return;
++        }
++
++        // Replace the previous designer canvas only after importing a different definition.
++        container.replaceChildren();
++        designer = sequentialWorkflowDesigner.Designer.create(container,
++            JSON.parse(JSON.stringify(definition)), {
++                theme: 'light',
++                undoStackSize: 20,
++                toolbox: { groups: toolboxGroups() },
++                steps: {
++                    isDeletable: item => item.type !== 'trigger',
++                    isDraggable: item => item.type !== 'trigger',
++                    isDuplicable: item => item.type !== 'trigger',
++                    iconUrlProvider: () =>
++                        'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"%3E%3Ccircle cx="12" cy="12" r="9" fill="%232a678b"/%3E%3Cpath d="M8 12h8M12 8v8" stroke="white" stroke-width="2"/%3E%3C/svg%3E'
++                },
++                validator: {
++                    root: document =>
++                    {
++                        try
++                        {
++                            api.assertValid(document);
++                            return true;
++                        }
++                        catch (_)
++                        {
++                            return false;
++                        }
++                    }
++                },
++                editors: {
++                    rootEditorProvider: () =>
++                    {
++                        const text = document.createElement('p');
++                        text.textContent = 'Select a workflow step to configure it.';
++                        return text;
++                    },
++                    stepEditorProvider: editStep
++                },
++                controlBar: true,
++                contextMenu: true
++            });
++        designer.onDefinitionChanged.subscribe(() =>
++        {
++            definition = designer.getDefinition();
++            renderJSON();
++            try
++            {
++                api.assertValid(definition);
++                message('Visual definition valid.');
++            }
++            catch (error)
++            {
++                message('Fix workflow: ' + error.message);
++            }
++        });
++    }
++
++    function loadRemoteScript(url)
++    {
++        return new Promise((resolve, reject) =>
++        {
++            const script = document.createElement('script');
++            script.src = url;
++            script.async = true;
++            script.onload = resolve;
++            script.onerror = () => reject(new Error('NoCode JS CDN unavailable; use the offline JSON editor.'));
++            document.head.appendChild(script);
++        });
++    }
++
++    function addStylesheet(url)
++    {
++        const link = document.createElement('link');
++        link.rel = 'stylesheet';
++        link.href = url;
++        document.head.appendChild(link);
++    }
++
++    async function enableVisual()
++    {
++        if (loading)
++        {
++            return;
++        }
++        try
++        {
++            api.assertValid(JSON.parse(json.value));
++            definition = JSON.parse(json.value);
++        }
++        catch (error)
++        {
++            message('Apply valid JSON before opening visual designer: ' + error.message);
++            return;
++        }
++        if (designer)
++        {
++            visual.classList.toggle('active');
++            return;
++        }
++        loading = true;
++        message('Loading optional NoCode JS visual designer (internet needed)...');
++        try
++        {
++            if (typeof sequentialWorkflowDesigner === 'undefined')
++            {
++                addStylesheet(CDN + '/css/designer.css');
++                addStylesheet(CDN + '/css/designer-light.css');
++                await loadRemoteScript(CDN + '/dist/index.umd.js');
++            }
++            if (typeof sequentialWorkflowDesigner === 'undefined' ||
++                !sequentialWorkflowDesigner.Designer)
++            {
++                throw new Error('NoCode JS visual designer was not initialized.');
++            }
++            createDesigner();
++            visual.classList.add('active');
++            message('NoCode JS visual editor ready.');
++        }
++        catch (error)
++        {
++            message(error.message);
++        }
++        finally
++        {
++            loading = false;
++        }
++    }
++
++    function resultLine(entry)
++    {
++        return '[' + entry.status + '] ' + entry.name + ' — ' + entry.detail;
++    }
++
++    async function execute()
++    {
++        if (executing)
++        {
++            return;
++        }
++        executing = true;
++        runButton.disabled = true;
++        output.textContent = '';
++        try
++        {
++            const document = JSON.parse(json.value);
++            api.assertValid(document);
++            definition = document;
++            message('Running workflow...');
++            const result = await engine.run(document, {
++                event: 'manual',
++                onStep: function(entry)
++                {
++                    output.textContent = resultLine(entry) + '\n' + output.textContent;
++                }
++            });
++            output.textContent += '\nResult: ' + result.status +
++                (result.error ? ' — ' + result.error : '');
++            message('Workflow ' + result.status + '.');
++        }
++        catch (error)
++        {
++            message('Workflow error.');
++            output.textContent += '\nError: ' + error.message;
++        }
++        finally
++        {
++            executing = false;
++            runButton.disabled = false;
++        }
++    }
++
++    function downloadJSON()
++    {
++        try
++        {
++            const document = JSON.parse(json.value);
++            api.assertValid(document);
++            const blob = new Blob([JSON.stringify(document, null, 2)], {
++                type: 'application/json'
++            });
++            const url = URL.createObjectURL(blob);
++            const anchor = document.createElement('a');
++            anchor.href = url;
++            anchor.download = 'IGAsim-workflow.json';
++            anchor.click();
++            setTimeout(() => URL.revokeObjectURL(url), 1000);
++            message('Workflow exported.');
++        }
++        catch (error)
++        {
++            message('Export failed: ' + error.message);
++        }
++    }
++
++    element('pa-visual-toggle').addEventListener('click', enableVisual);
++    element('pa-example').addEventListener('click', () => setDefinition(api.sampleDefinition()));
++    element('pa-apply').addEventListener('click', () =>
++    {
++        try
++        {
++            setDefinition(JSON.parse(json.value));
++        }
++        catch (error)
++        {
++            message('Invalid JSON/workflow: ' + error.message);
++        }
+     });
+-  }
+-  function loadRemoteScript(url) {
+-    return new Promise((resolve, reject) => {
+-      const el = document.createElement('script');
+-      el.src = url; el.async = true;
+-      el.onload = resolve;
+-      el.onerror = () => reject(new Error('NoCode JS CDN unavailable; use the offline JSON editor.'));
+-      document.head.appendChild(el);
++    element('pa-run').addEventListener('click', execute);
++    element('pa-export').addEventListener('click', downloadJSON);
++    element('pa-import').addEventListener('change', async event =>
++    {
++        const file = event.target.files && event.target.files[0];
++        if (!file)
++        {
++            return;
++        }
++        try
++        {
++            if (file.size > 200000)
++            {
++                throw new Error('File exceeds 200 KB import limit.');
++            }
++            setDefinition(JSON.parse(await file.text()));
++        }
++        catch (error)
++        {
++            message('Import failed: ' + error.message);
++        }
++        event.target.value = '';
+     });
+-  }
+-  function addStylesheet(url) {
+-    const link = document.createElement('link');
+-    link.rel = 'stylesheet'; link.href = url; document.head.appendChild(link);
+-  }
+-  async function enableVisual() {
+-    if (loading) return;
+-    try { api.assertValid(JSON.parse(json.value)); definition = JSON.parse(json.value); }
+-    catch (error) { message('Apply valid JSON before opening visual designer: ' + error.message); return; }
+-    if (designer) { visual.classList.toggle('active'); return; }
+-    loading = true;
+-    message('Loading optional NoCode JS visual designer (internet needed)...');
+-    try {
+-      if (!globalThis.sequentialWorkflowDesigner) {
+-        addStylesheet(CDN + '/css/designer.css');
+-        addStylesheet(CDN + '/css/designer-light.css');
+-        await loadRemoteScript(CDN + '/dist/index.umd.js');
+-      }
+-      if (!globalThis.sequentialWorkflowDesigner || !globalThis.sequentialWorkflowDesigner.Designer) {
+-        throw new Error('NoCode JS visual designer was not initialized.');
+-      }
+-      createDesigner();
+-      visual.classList.add('active');
+-      message('NoCode JS visual editor ready.');
+-    } catch (error) {
+-      message(error.message);
+-    } finally { loading = false; }
+-  }
+-  async function execute() {
+-    if (executing) return;
+-    executing = true;
+-    runButton.disabled = true;
+-    output.textContent = '';
+-    try {
+-      // JSON and canvas are kept synchronized on edit. Always validate before execution.
+-      const doc = JSON.parse(json.value);
+-      api.assertValid(doc);
+-      definition = doc;
+-      message('Running workflow...');
+-      const result = await engine.run(doc, { event: 'manual', onStep(entry) {
+-        output.textContent = resultLine(entry) + '\n' + output.textContent;
+-      }});
+-      output.textContent += '\nResult: ' + result.status + (result.error ? ' — ' + result.error : '');
+-      message('Workflow ' + result.status + '.');
+-    } catch (error) {
+-      message('Workflow error.');
+-      output.textContent += '\nError: ' + error.message;
+-    } finally {
+-      executing = false;
+-      runButton.disabled = false;
+-    }
+-  }
+-  function resultLine(entry) {
+-    return '[' + entry.status + '] ' + entry.name + ' — ' + entry.detail;
+-  }
+-  function downloadJSON() {
+-    try {
+-      const doc = JSON.parse(json.value); api.assertValid(doc);
+-      const blob = new Blob([JSON.stringify(doc,null,2)], { type:'application/json' });
+-      const url = URL.createObjectURL(blob);
+-      const anchor = document.createElement('a');
+-      anchor.href = url; anchor.download = 'IGAsim-workflow.json'; anchor.click();
+-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+-      message('Workflow exported.');
+-    } catch(error) { message('Export failed: ' + error.message); }
+-  }
+-  $('pa-visual-toggle').addEventListener('click', enableVisual);
+-  $('pa-example').addEventListener('click', () => setDefinition(api.sampleDefinition()));
+-  $('pa-apply').addEventListener('click', () => {
+-    try { setDefinition(JSON.parse(json.value)); }
+-    catch(error) { message('Invalid JSON/workflow: ' + error.message); }
+-  });
+-  $('pa-run').addEventListener('click', execute);
+-  $('pa-export').addEventListener('click', downloadJSON);
+-  $('pa-import').addEventListener('change', async event => {
+-    const file = event.target.files && event.target.files[0];
+-    if (!file) return;
+-    try {
+-      if (file.size > 200000) throw new Error('File exceeds 200 KB import limit.');
+-      setDefinition(JSON.parse(await file.text()));
+-    } catch(error) { message('Import failed: ' + error.message); }
+-    event.target.value = '';
+-  });
+-  renderJSON();
+-  globalThis.PowerAutomateJSApp = { engine, getDefinition: () => JSON.parse(json.value), setDefinition };
+-})();
++
++    renderJSON();
++    this.getDefinition = function()
++    {
++        return JSON.parse(json.value);
++    };
++    this.setDefinition = setDefinition;
++}
++
++// A classic script provides the global application handle without an IIFE or globalThis assignment.
++var PowerAutomateJSApp;
++if (typeof document !== 'undefined' && document.getElementById('pa-workflows') &&
++    typeof PowerAutomateJS !== 'undefined' && typeof PowerShellJSApp !== 'undefined')
++{
++    PowerAutomateJSApp = new PowerAutomateApp(PowerShellJSApp);
++}
+diff --git a/res/PA_CORE.js b/res/PA_CORE.js
+index be1b1b8..d822eaa 100644
+--- a/res/PA_CORE.js
++++ b/res/PA_CORE.js
+@@ -1,213 +1,370 @@
+-/* IGAsim PowerAutomateJS v0.1: NoCode JS-compatible JSON workflow runner.
+- * Classic browser script; no Node.js, npm, eval, network, or real identity connector.
+- * The visual designer is an OPTIONAL NoCode JS integration in PA_APP.js.
++/* PowerAutomateJS — NoCode JS-compatible workflow runtime for fictional IGAsim data.
++ * Browser classic-script constructor: no IIFE, prototype forwarding, module or network.
++ * All mutable execution state belongs to an individual WorkflowEngine instance.
+  */
+-(function (root) {
+-  'use strict';
+-  const SUPPORTED = ['trigger', 'powershell', 'graph', 'setVariable', 'log', 'condition'];
+-  const MAX_STEPS = 120;
+-  const MAX_DEPTH = 8;
+-  const MAX_SOURCE = 20000;
+-  const BAD_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+-
+-  function plain(value) {
+-    return value !== null && typeof value === 'object' && !Array.isArray(value);
+-  }
+-  function copy(value) { return JSON.parse(JSON.stringify(value)); }
+-  function step(id, type, name, properties) {
+-    return { id, componentType: 'task', type, name, properties: properties || {} };
+-  }
+-  function sampleDefinition() {
+-    return {
+-      properties: { name: 'Hybrid identity inventory' },
+-      sequence: [
+-        step('pa-trigger-1', 'trigger', 'Manual trigger', { event: 'manual' }),
+-        step('pa-connect-1', 'powershell', 'Connect simulated Graph', { script: 'Connect-MgGraph -Scopes "User.Read.All"' }),
+-        step('pa-graph-1', 'graph', 'Query Entra users (Graph)', {
+-          method: 'GET', uri: '/v1.0/users?$top=1', body: ''
+-        }),
+-        {
+-          id: 'pa-condition-1', componentType: 'switch', type: 'condition',
+-          name: 'Did Graph succeed?', properties: { path: 'lastStatus', operator: 'eq', value: '200' },
+-          branches: {
+-            true: [step('pa-yes-1', 'log', 'Graph responded', { message: 'Graph status: ${lastStatus}' })],
+-            false: [step('pa-no-1', 'log', 'Graph failed', { message: 'Graph status: ${lastStatus}' })]
+-          }
+-        },
+-        step('pa-ps-1', 'powershell', 'Query AD users', {
+-          script: 'Get-ADUser -Filter * | Select-Object Name,SamAccountName'
+-        }),
+-        step('pa-log-1', 'log', 'Completed', { message: 'Hybrid inventory finished (simulated only).' })
+-      ]
+-    };
+-  }
+-  function assertValid(definition) {
+-    if (!plain(definition) || !Array.isArray(definition.sequence) || !plain(definition.properties)) {
+-      throw new Error('Workflow requires properties object and sequence array.');
++function PowerAutomateCore()
++{
++    'use strict';
++
++    const SUPPORTED = ['trigger','powershell','graph','setVariable','log','condition'];
++    const MAX_STEPS = 120;
++    const MAX_DEPTH = 8;
++    const MAX_SOURCE = 20000;
++    const BAD_KEYS = new Set(['__proto__','prototype','constructor']);
++
++    function plain(value)
++    {
++        return value !== null && typeof value === 'object' && !Array.isArray(value);
+     }
+-    let count = 0;
+-    const ids = new Set();
+-    function scan(sequence, depth, rootSequence) {
+-      if (depth > MAX_DEPTH) throw new Error('Workflow nested too deeply.');
+-      for (let i = 0; i < sequence.length; i++) {
+-        const s = sequence[i];
+-        if (!plain(s) || !SUPPORTED.includes(s.type) || !plain(s.properties) ||
+-            typeof s.id !== 'string' || !s.id || ids.has(s.id)) {
+-          throw new Error('Unknown step, malformed properties or duplicate step ID.');
+-        }
+-        ids.add(s.id);
+-        if (++count > MAX_STEPS) throw new Error('Workflow exceeds 120 steps.');
+-        if (s.componentType !== (s.type === 'condition' ? 'switch' : 'task')) {
+-          throw new Error('Invalid componentType for ' + s.type);
++
++    function step(id, type, name, properties)
++    {
++        return { id, componentType: 'task', type, name, properties: properties || {} };
++    }
++
++    function sampleDefinition()
++    {
++        return {
++            properties: { name: 'Hybrid identity inventory' },
++            sequence: [
++                step('pa-trigger-1', 'trigger', 'Manual trigger', { event: 'manual' }),
++                step('pa-connect-1', 'powershell', 'Connect simulated Graph', {
++                    script: 'Connect-MgGraph -Scopes "User.Read.All"'
++                }),
++                step('pa-graph-1', 'graph', 'Query Entra users (Graph)', {
++                    method: 'GET', uri: '/v1.0/users?$top=1', body: ''
++                }),
++                {
++                    id: 'pa-condition-1',
++                    componentType: 'switch',
++                    type: 'condition',
++                    name: 'Did Graph succeed?',
++                    properties: { path: 'lastStatus', operator: 'eq', value: '200' },
++                    branches: {
++                        true: [step('pa-yes-1', 'log', 'Graph responded', {
++                            message: 'Graph status: ${lastStatus}'
++                        })],
++                        false: [step('pa-no-1', 'log', 'Graph failed', {
++                            message: 'Graph status: ${lastStatus}'
++                        })]
++                    }
++                },
++                step('pa-ps-1', 'powershell', 'Query AD users', {
++                    script: 'Get-ADUser -Filter * | Select-Object Name,SamAccountName'
++                }),
++                step('pa-log-1', 'log', 'Completed', {
++                    message: 'Hybrid inventory finished (simulated only).'
++                })
++            ]
++        };
++    }
++
++    function assertValid(definition)
++    {
++        if (!plain(definition) || !Array.isArray(definition.sequence) || !plain(definition.properties))
++        {
++            throw new Error('Workflow requires properties object and sequence array.');
+         }
+-        if (s.type === 'trigger' && !(rootSequence && i === 0)) {
+-          throw new Error('Trigger must be the first step in the root sequence.');
++
++        let count = 0;
++        const ids = new Set();
++
++        function scan(sequence, depth, rootSequence)
++        {
++            if (depth > MAX_DEPTH)
++            {
++                throw new Error('Workflow nested too deeply.');
++            }
++
++            for (let i = 0; i < sequence.length; i++)
++            {
++                const current = sequence[i];
++                if (!plain(current) || !SUPPORTED.includes(current.type) || !plain(current.properties) ||
++                    typeof current.id !== 'string' || !current.id || ids.has(current.id))
++                {
++                    throw new Error('Unknown step, malformed properties or duplicate step ID.');
++                }
++
++                ids.add(current.id);
++                if (++count > MAX_STEPS)
++                {
++                    throw new Error('Workflow exceeds 120 steps.');
++                }
++                if (current.componentType !== (current.type === 'condition' ? 'switch' : 'task'))
++                {
++                    throw new Error('Invalid componentType for ' + current.type);
++                }
++                if (current.type === 'trigger' && !(rootSequence && i === 0))
++                {
++                    throw new Error('Trigger must be the first step in the root sequence.');
++                }
++                if (current.type === 'condition')
++                {
++                    if (!plain(current.branches) || !Array.isArray(current.branches.true) ||
++                        !Array.isArray(current.branches.false) ||
++                        Object.keys(current.branches).some(key => key !== 'true' && key !== 'false'))
++                    {
++                        throw new Error('Condition requires true and false branch arrays.');
++                    }
++                    scan(current.branches.true, depth + 1, false);
++                    scan(current.branches.false, depth + 1, false);
++                }
++            }
+         }
+-        if (s.type === 'condition') {
+-          if (!plain(s.branches) || !Array.isArray(s.branches.true) || !Array.isArray(s.branches.false) ||
+-              Object.keys(s.branches).some(k => k !== 'true' && k !== 'false')) {
+-            throw new Error('Condition requires true and false branch arrays.');
+-          }
+-          scan(s.branches.true, depth + 1, false);
+-          scan(s.branches.false, depth + 1, false);
++
++        if (!definition.sequence.length || definition.sequence[0].type !== 'trigger')
++        {
++            throw new Error('Workflow must begin with a trigger.');
+         }
+-      }
++        scan(definition.sequence, 0, true);
++        return true;
+     }
+-    if (!definition.sequence.length || definition.sequence[0].type !== 'trigger') {
+-      throw new Error('Workflow must begin with a trigger.');
++
++    function getPath(context, path)
++    {
++        if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\.[0-9]+)*$/.test(String(path || '')))
++        {
++            throw new Error('Invalid path: ' + path);
++        }
++        return String(path).split('.').reduce((current, key) =>
++        {
++            if (BAD_KEYS.has(key))
++            {
++                throw new Error('Forbidden state path.');
++            }
++            return current == null ? undefined :
++                Object.prototype.hasOwnProperty.call(Object(current), key) ? current[key] : undefined;
++        }, context);
+     }
+-    scan(definition.sequence, 0, true);
+-    return true;
+-  }
+-  function getPath(context, path) {
+-    if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\.[0-9]+)*$/.test(String(path || ''))) {
+-      throw new Error('Invalid path: ' + path);
++
++    function compare(left, operator, right)
++    {
++        switch (operator)
++        {
++            case 'exists': return left !== undefined && left !== null;
++            case 'notExists': return left === undefined || left === null;
++            case 'eq': return String(left) === String(right);
++            case 'ne': return String(left) !== String(right);
++            case 'gt': return Number(left) > Number(right);
++            case 'gte': return Number(left) >= Number(right);
++            case 'lt': return Number(left) < Number(right);
++            case 'lte': return Number(left) <= Number(right);
++            case 'includes':
++                return Array.isArray(left) ? left.some(value => String(value) === String(right)) :
++                    String(left ?? '').includes(String(right));
++            default:
++                throw new Error('Unsupported comparison operator: ' + operator);
++        }
+     }
+-    return String(path).split('.').reduce((current, key) => {
+-      if (BAD_KEYS.has(key)) throw new Error('Forbidden state path.');
+-      return current == null ? undefined : Object.prototype.hasOwnProperty.call(Object(current), key) ? current[key] : undefined;
+-    }, context);
+-  }
+-  function compare(left, operator, right) {
+-    if (operator === 'exists') return left !== undefined && left !== null;
+-    if (operator === 'notExists') return left === undefined || left === null;
+-    if (operator === 'eq') return String(left) === String(right);
+-    if (operator === 'ne') return String(left) !== String(right);
+-    if (operator === 'gt') return Number(left) > Number(right);
+-    if (operator === 'gte') return Number(left) >= Number(right);
+-    if (operator === 'lt') return Number(left) < Number(right);
+-    if (operator === 'lte') return Number(left) <= Number(right);
+-    if (operator === 'includes') return Array.isArray(left) ? left.some(x => String(x) === String(right)) : String(left ?? '').includes(String(right));
+-    throw new Error('Unsupported comparison operator: ' + operator);
+-  }
+-  function stringify(value) {
+-    if (value === undefined) return '(undefined)';
+-    return typeof value === 'string' ? value : JSON.stringify(value);
+-  }
+-  function interpolate(template, state) {
+-    return String(template || '').replace(/\$\{([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\.[0-9]+)*)\}/g,
+-      (_, path) => stringify(getPath(state, path)));
+-  }
+-  function WorkflowEngine(options) {
+-    options = options || {};
+-    if (!options.powershell || typeof options.powershell.execute !== 'function') {
+-      throw new Error('WorkflowEngine requires a shared PowerShellJS simulator instance.');
++
++    function stringify(value)
++    {
++        if (value === undefined)
++        {
++            return '(undefined)';
++        }
++        return typeof value === 'string' ? value : JSON.stringify(value);
+     }
+-    this.powershell = options.powershell;
+-    this.running = false;
+-  }
+-  WorkflowEngine.prototype.run = async function (definition, options) {
+-    if (this.running) throw new Error('A workflow is already running.');
+-    // Validate the entire definition BEFORE any simulated writes.
+-    assertValid(definition);
+-    options = options || {};
+-    const event = options.event || 'manual';
+-    const trigger = definition.sequence[0];
+-    if ((trigger.properties.event || 'manual') !== event) {
+-      throw new Error('Trigger event does not match: ' + event);
++
++    function interpolate(template, state)
++    {
++        return String(template || '').replace(/\$\{([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\.[0-9]+)*)\}/g,
++            (_, path) => stringify(getPath(state, path)));
+     }
+-    const state = { event, variables: Object.create(null), last: null, lastStatus: null, lastPowerShell: null };
+-    const trace = [];
+-    let stepsExecuted = 0;
+-    this.running = true;
+-    const self = this;
+-    async function visit(sequence) {
+-      for (const s of sequence) {
+-        if (++stepsExecuted > MAX_STEPS) throw new Error('Execution limit exceeded.');
+-        const entry = { id: s.id, type: s.type, name: s.name, status: 'running', detail: '' };
+-        trace.push(entry);
+-        if (typeof options.onStep === 'function') options.onStep(entry, state);
+-        try {
+-          const p = s.properties;
+-          if (s.type === 'trigger') {
+-            entry.detail = 'Trigger: ' + event;
+-          } else if (s.type === 'powershell') {
+-            const source = String(p.script || '');
+-            if (!source.trim() || source.length > MAX_SOURCE) throw new Error('PowerShell script is empty or too long.');
+-            const reply = await self.powershell.execute(source);
+-            state.lastPowerShell = reply;
+-            state.last = reply.objects;
+-            state.lastStatus = reply.success ? 200 : 400;
+-            if (!reply.success) throw new Error((reply.errors || []).join('; ') || 'PowerShell execution failed.');
+-            entry.detail = 'PowerShell: ' + (reply.output || []).length + ' output line(s)';
+-          } else if (s.type === 'graph') {
+-            const method = String(p.method || 'GET').toUpperCase();
+-            const uri = String(p.uri || '');
+-            if (!['GET','POST','PATCH','DELETE'].includes(method) || !uri.startsWith('/v1.0/')) {
+-              throw new Error('Graph action requires a supported method and local /v1.0/ URI.');
++
++    this.version = '0.1';
++    this.assertValid = assertValid;
++    this.sampleDefinition = sampleDefinition;
++    this.interpolate = interpolate;
++
++    // Each engine owns its run lock and shares the caller's simulated identity backend.
++    this.WorkflowEngine = function WorkflowEngine(options)
++    {
++        options = options || {};
++        if (!options.powershell || typeof options.powershell.execute !== 'function')
++        {
++            throw new Error('WorkflowEngine requires a shared PowerShellJS simulator instance.');
++        }
++
++        this.powershell = options.powershell;
++        this.running = false;
++
++        this.run = async function(definition, options)
++        {
++            if (this.running)
++            {
++                throw new Error('A workflow is already running.');
+             }
+-            const bodyText = String(p.body || '').trim();
+-            const body = bodyText ? JSON.parse(interpolate(bodyText, state)) : undefined;
+-            // This is the IN-MEMORY Graph emulator, never fetch() or remote Microsoft Graph.
+-            const response = self.powershell.session.entra.Graph(method, uri, { body });
+-            state.lastStatus = response.status;
+-            state.last = response.body;
+-            if (response.status < 200 || response.status >= 300) {
+-              throw new Error('Graph HTTP ' + response.status + ': ' + stringify(response.body));
++            // Validate the complete workflow before executing any simulated write.
++            assertValid(definition);
++            options = options || {};
++            const event = options.event || 'manual';
++            const trigger = definition.sequence[0];
++            if ((trigger.properties.event || 'manual') !== event)
++            {
++                throw new Error('Trigger event does not match: ' + event);
+             }
+-            entry.detail = method + ' ' + uri + ' → ' + response.status;
+-          } else if (s.type === 'setVariable') {
+-            const key = String(p.name || '');
+-            if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(key) || BAD_KEYS.has(key)) {
+-              throw new Error('Unsafe or missing variable name.');
++
++            const state = {
++                event,
++                variables: Object.create(null),
++                last: null,
++                lastStatus: null,
++                lastPowerShell: null
++            };
++            const trace = [];
++            let stepsExecuted = 0;
++            const engine = this;
++            this.running = true;
++
++            async function visit(sequence)
++            {
++                for (const current of sequence)
++                {
++                    if (++stepsExecuted > MAX_STEPS)
++                    {
++                        throw new Error('Execution limit exceeded.');
++                    }
++                    const entry = {
++                        id: current.id,
++                        type: current.type,
++                        name: current.name,
++                        status: 'running',
++                        detail: ''
++                    };
++                    trace.push(entry);
++                    if (typeof options.onStep === 'function')
++                    {
++                        options.onStep(entry, state);
++                    }
++
++                    try
++                    {
++                        const properties = current.properties;
++                        if (current.type === 'trigger')
++                        {
++                            entry.detail = 'Trigger: ' + event;
++                        }
++                        else if (current.type === 'powershell')
++                        {
++                            const source = String(properties.script || '');
++                            if (!source.trim() || source.length > MAX_SOURCE)
++                            {
++                                throw new Error('PowerShell script is empty or too long.');
++                            }
++                            const reply = await engine.powershell.execute(source);
++                            state.lastPowerShell = reply;
++                            state.last = reply.objects;
++                            state.lastStatus = reply.success ? 200 : 400;
++                            if (!reply.success)
++                            {
++                                throw new Error((reply.errors || []).join('; ') || 'PowerShell execution failed.');
++                            }
++                            entry.detail = 'PowerShell: ' + (reply.output || []).length + ' output line(s)';
++                        }
++                        else if (current.type === 'graph')
++                        {
++                            const method = String(properties.method || 'GET').toUpperCase();
++                            const uri = String(properties.uri || '');
++                            if (!['GET','POST','PATCH','DELETE'].includes(method) || !uri.startsWith('/v1.0/'))
++                            {
++                                throw new Error('Graph action requires a supported method and local /v1.0/ URI.');
++                            }
++                            const bodyText = String(properties.body || '').trim();
++                            const body = bodyText ? JSON.parse(interpolate(bodyText, state)) : undefined;
++                            // Use only the in-memory Graph emulator, never remote network access or Microsoft Graph.
++                            const response = engine.powershell.session.entra.Graph(method, uri, { body });
++                            state.lastStatus = response.status;
++                            state.last = response.body;
++                            if (response.status < 200 || response.status >= 300)
++                            {
++                                throw new Error('Graph HTTP ' + response.status + ': ' + stringify(response.body));
++                            }
++                            entry.detail = method + ' ' + uri + ' → ' + response.status;
++                        }
++                        else if (current.type === 'setVariable')
++                        {
++                            const key = String(properties.name || '');
++                            if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(key) || BAD_KEYS.has(key))
++                            {
++                                throw new Error('Unsafe or missing variable name.');
++                            }
++                            let value;
++                            if (properties.source === 'path')
++                            {
++                                value = getPath(state, String(properties.value || ''));
++                            }
++                            else
++                            {
++                                const raw = interpolate(properties.value == null ? '' : properties.value, state);
++                                try
++                                {
++                                    value = JSON.parse(raw);
++                                }
++                                catch (_)
++                                {
++                                    value = raw;
++                                }
++                            }
++                            state.variables[key] = value;
++                            entry.detail = key + ' = ' + stringify(value);
++                        }
++                        else if (current.type === 'log')
++                        {
++                            entry.detail = interpolate(properties.message, state);
++                        }
++                        else if (current.type === 'condition')
++                        {
++                            const value = getPath(state, properties.path);
++                            const truthy = compare(value, properties.operator || 'eq',
++                                properties.value == null ? '' : properties.value);
++                            entry.detail = truthy ? 'true' : 'false';
++                            entry.status = 'success';
++                            if (typeof options.onStep === 'function')
++                    {
++                        options.onStep(entry, state);
++                    }
++                            await visit(current.branches[String(truthy)]);
++                            continue;
++                        }
++                        entry.status = 'success';
++                        if (typeof options.onStep === 'function')
++                    {
++                        options.onStep(entry, state);
++                    }
++                    }
++                    catch (error)
++                    {
++                        entry.status = 'failed';
++                        entry.detail = String(error && error.message || error);
++                        if (typeof options.onStep === 'function')
++                    {
++                        options.onStep(entry, state);
++                    }
++                        throw error;
++                    }
++                }
+             }
+-            let value;
+-            if (p.source === 'path') value = getPath(state, String(p.value || ''));
+-            else {
+-              const raw = interpolate(p.value == null ? '' : p.value, state);
+-              try { value = JSON.parse(raw); } catch (_) { value = raw; }
++
++            try
++            {
++                await visit(definition.sequence);
++                return { status: 'success', trace, state };
+             }
+-            state.variables[key] = value;
+-            entry.detail = key + ' = ' + stringify(value);
+-          } else if (s.type === 'log') {
+-            entry.detail = interpolate(p.message, state);
+-          } else if (s.type === 'condition') {
+-            const value = getPath(state, p.path);
+-            const truthy = compare(value, p.operator || 'eq', p.value == null ? '' : p.value);
+-            entry.detail = truthy ? 'true' : 'false';
+-            entry.status = 'success';
+-            if (typeof options.onStep === 'function') options.onStep(entry, state);
+-            await visit(s.branches[String(truthy)]);
+-            continue;
+-          }
+-          entry.status = 'success';
+-          if (typeof options.onStep === 'function') options.onStep(entry, state);
+-        } catch (error) {
+-          entry.status = 'failed';
+-          entry.detail = String(error && error.message || error);
+-          if (typeof options.onStep === 'function') options.onStep(entry, state);
+-          throw error;
+-        }
+-      }
+-    }
+-    try {
+-      await visit(definition.sequence);
+-      return { status: 'success', trace, state };
+-    } catch (error) {
+-      return { status: 'failed', trace, state, error: String(error && error.message || error) };
+-    } finally {
+-      this.running = false;
+-    }
+-  };
+-  root.PowerAutomateJS = Object.freeze({ version: '0.1', WorkflowEngine, assertValid, sampleDefinition, interpolate });
+-})(typeof globalThis !== 'undefined' ? globalThis : this);
++            catch (error)
++            {
++                return { status: 'failed', trace, state,
++                    error: String(error && error.message || error) };
++            }
++            finally
++            {
++                this.running = false;
++            }
++        };
++    };
++
++    Object.freeze(this);
++}
++
++// Classic script exposes this name to PA_APP.js, PA_LIBRARY.js and the Studio.
++var PowerAutomateJS = new PowerAutomateCore();
+diff --git a/res/PA_LIBRARY.js b/res/PA_LIBRARY.js
+index 4246283..cde6645 100644
+--- a/res/PA_LIBRARY.js
++++ b/res/PA_LIBRARY.js
+@@ -1,77 +1,170 @@
+-/* IGAsim NoCode JS Studio v0.2 — prebuilt, fictional workflow definitions.
+- * Browser classic-script API; no network, storage, imports, Node or bundler.
++/* NoCode JS Studio — sample workflow definitions with fictional identity data.
++ * Classic browser constructor; each library instance owns its template metadata.
+  */
+-(function (root) {
+-  'use strict';
+-  const action = (id, type, name, properties) => ({id, componentType:'task', type, name, properties:properties || {}});
+-  const trigger = () => action('trigger-manual','trigger','Manual trigger',{event:'manual'});
+-  const ps = (id, name, script) => action(id,'powershell',name,{script});
+-  const graph = (id,name,method,uri,body='') => action(id,'graph',name,{method,uri,body});
+-  const log = (id,name,message) => action(id,'log',name,{message});
+-  const variable = (id,name,key,value,source='literal') => action(id,'setVariable',name,{name:key,value,source});
+-  const condition = (id,name,path,operator,value,yes,no) => ({
+-    id, componentType:'switch',type:'condition',name,
+-    properties:{path,operator,value},branches:{true:yes,false:no}
+-  });
+-  const definition = (name,sequence) => ({properties:{name},sequence:[trigger(),...sequence]});
+-  const catalogEndpoint = '/v1.0/identityGovernance/entitlementManagement/catalogs';
+-  const packageEndpoint = '/v1.0/identityGovernance/entitlementManagement/accessPackages';
+-  const examples = Object.freeze([
+-    {id:'inventory',label:'Hybrid identity inventory',category:'Read-only',description:'Query simulated Entra users and Active Directory users in one workflow.'},
+-    {id:'joiner',label:'Joiner: AD provisioning',category:'Directory writes',description:'Move a fictional employee into Operations and update group membership.'},
+-    {id:'catalog',label:'Governance: create catalog',category:'Graph CRUD',description:'Connect to Graph, create a fictional access catalog, then check the response.'},
+-    {id:'package',label:'Governance: create access package',category:'Graph CRUD',description:'Create a new package in the built-in General catalog.'},
+-    {id:'branch',label:'Condition and variables',category:'Logic',description:'Show a true/false decision using only internal workflow state.'}
+-  ]);
+-  const templates = {
+-    inventory() {
+-      return root.PowerAutomateJS.sampleDefinition();
+-    },
+-    joiner() {
+-      return definition('Joiner — fictional AD user',[
+-        ps('joiner-department','Set department','Set-ADUser -Identity leo.chen -Department Operations'),
+-        ps('joiner-group','Assign Operations group','Add-ADGroupMember -Identity BR_Operations -Members leo.chen'),
+-        ps('joiner-verify','Verify AD changes','Get-ADUser -Identity leo.chen -Properties Department\nGet-ADGroupMember -Identity BR_Operations'),
+-        log('joiner-complete','Finish','AD changes exist in the current in-memory sandbox only.')
+-      ]);
+-    },
+-    catalog() {
+-      return definition('Create an access catalog',[
+-        ps('catalog-connect','Connect simulated Graph','Connect-MgGraph -Scopes "EntitlementManagement.ReadWrite.All"'),
+-        graph('catalog-create','Create catalog','POST',catalogEndpoint,'{"displayName":"Studio Demo Catalog","description":"NoCode JS simulation"}'),
+-        condition('catalog-status','Created?', 'lastStatus','eq','201',
+-          [log('catalog-success','Catalog created','New fictional catalog ID: ${last.id}')],
+-          [log('catalog-rejected','Unexpected response','Graph returned ${lastStatus}')]),
+-        graph('catalog-read','List catalogs','GET',catalogEndpoint),
+-        log('catalog-done','Complete','Catalogs listed successfully (HTTP ${lastStatus}).')
+-      ]);
+-    },
+-    package() {
+-      return definition('Create an access package',[
+-        ps('package-connect','Connect simulated Graph','Connect-MgGraph -Scopes "EntitlementManagement.ReadWrite.All"'),
+-        graph('package-create','Create access package','POST',packageEndpoint,
+-          '{"displayName":"Studio Demo Package","description":"Simulated access bundle","catalog":{"id":"f0000000-0000-4000-8000-000000001001"}}'),
+-        variable('package-id','Remember created ID','createdPackageId','last.id','path'),
+-        graph('package-get','List access packages','GET',packageEndpoint),
+-        log('package-done','Complete','Created package ${variables.createdPackageId}; HTTP ${lastStatus}.')
+-      ]);
+-    },
+-    branch() {
+-      return definition('Evaluate workflow variables',[
+-        variable('logic-set','Set onboarding stage','stage','approved'),
+-        condition('logic-if','Manager approved?', 'variables.stage','eq','approved',
+-          [log('logic-yes','Approved path','Manager approved: continue provisioning.')],
+-          [log('logic-no','Rejected path','Approval missing: do not provision.')]),
+-        log('logic-done','Complete','Decision recorded in the execution trace.')
+-      ]);
++function NoCodeWorkflowLibraryContainer()
++{
++    'use strict';
++
++    const catalogEndpoint = '/v1.0/identityGovernance/entitlementManagement/catalogs';
++    const packageEndpoint = '/v1.0/identityGovernance/entitlementManagement/accessPackages';
++
++    // Inline, instance-owned catalog of available examples.
++    const examples = [
++        {
++            id: 'inventory',
++            label: 'Hybrid identity inventory',
++            category: 'Read-only',
++            description: 'Query simulated Entra users and Active Directory users in one workflow.'
++        },
++        {
++            id: 'joiner',
++            label: 'Joiner: AD provisioning',
++            category: 'Directory writes',
++            description: 'Move a fictional employee into Operations and update group membership.'
++        },
++        {
++            id: 'catalog',
++            label: 'Governance: create catalog',
++            category: 'Graph CRUD',
++            description: 'Connect to Graph, create a fictional access catalog, then check the response.'
++        },
++        {
++            id: 'package',
++            label: 'Governance: create access package',
++            category: 'Graph CRUD',
++            description: 'Create a new package in the built-in General catalog.'
++        },
++        {
++            id: 'branch',
++            label: 'Condition and variables',
++            category: 'Logic',
++            description: 'Show a true/false decision using only internal workflow state.'
++        }
++    ];
++
++    function action(id, type, name, properties)
++    {
++        return { id, componentType: 'task', type, name, properties: properties || {} };
+     }
+-  };
+-  function get(id) {
+-    if (!Object.prototype.hasOwnProperty.call(templates,id)) throw new Error('Unknown studio example: '+id);
+-    const doc = templates[id]();
+-    root.PowerAutomateJS.assertValid(doc);
+-    return JSON.parse(JSON.stringify(doc));
+-  }
+-  function list() {return examples.map(item => Object.assign({},item));}
+-  root.NoCodeWorkflowLibrary = Object.freeze({version:'0.2',list,get});
+-})(globalThis);
++
++    function trigger()
++    {
++        return action('trigger-manual', 'trigger', 'Manual trigger', { event: 'manual' });
++    }
++
++    function powershell(id, name, script)
++    {
++        return action(id, 'powershell', name, { script });
++    }
++
++    function graph(id, name, method, uri, body = '')
++    {
++        return action(id, 'graph', name, { method, uri, body });
++    }
++
++    function log(id, name, message)
++    {
++        return action(id, 'log', name, { message });
++    }
++
++    function variable(id, name, key, value, source = 'literal')
++    {
++        return action(id, 'setVariable', name, { name: key, value, source });
++    }
++
++    function condition(id, name, path, operator, value, yes, no)
++    {
++        return {
++            id,
++            componentType: 'switch',
++            type: 'condition',
++            name,
++            properties: { path, operator, value },
++            branches: { true: yes, false: no }
++        };
++    }
++
++    function definition(name, sequence)
++    {
++        return { properties: { name }, sequence: [trigger(), ...sequence] };
++    }
++
++    // Private template methods; the public API returns independently cloned JSON definitions.
++    const templates = {
++        inventory: function()
++        {
++            return PowerAutomateJS.sampleDefinition();
++        },
++        joiner: function()
++        {
++            return definition('Joiner — fictional AD user', [
++                powershell('joiner-department', 'Set department',
++                    'Set-ADUser -Identity leo.chen -Department Operations'),
++                powershell('joiner-group', 'Assign Operations group',
++                    'Add-ADGroupMember -Identity BR_Operations -Members leo.chen'),
++                powershell('joiner-verify', 'Verify AD changes',
++                    'Get-ADUser -Identity leo.chen -Properties Department\nGet-ADGroupMember -Identity BR_Operations'),
++                log('joiner-complete', 'Finish',
++                    'AD changes exist in the current in-memory sandbox only.')
++            ]);
++        },
++        catalog: function()
++        {
++            return definition('Create an access catalog', [
++                powershell('catalog-connect', 'Connect simulated Graph',
++                    'Connect-MgGraph -Scopes "EntitlementManagement.ReadWrite.All"'),
++                graph('catalog-create', 'Create catalog', 'POST', catalogEndpoint,
++                    '{"displayName":"Studio Demo Catalog","description":"NoCode JS simulation"}'),
++                condition('catalog-status', 'Created?', 'lastStatus', 'eq', '201',
++                    [log('catalog-success', 'Catalog created', 'New fictional catalog ID: ${last.id}')],
++                    [log('catalog-rejected', 'Unexpected response', 'Graph returned ${lastStatus}')]),
++                graph('catalog-read', 'List catalogs', 'GET', catalogEndpoint),
++                log('catalog-done', 'Complete', 'Catalogs listed successfully (HTTP ${lastStatus}).')
++            ]);
++        },
++        package: function()
++        {
++            return definition('Create an access package', [
++                powershell('package-connect', 'Connect simulated Graph',
++                    'Connect-MgGraph -Scopes "EntitlementManagement.ReadWrite.All"'),
++                graph('package-create', 'Create access package', 'POST', packageEndpoint,
++                    '{"displayName":"Studio Demo Package","description":"Simulated access bundle","catalog":{"id":"f0000000-0000-4000-8000-000000001001"}}'),
++                variable('package-id', 'Remember created ID', 'createdPackageId', 'last.id', 'path'),
++                graph('package-get', 'List access packages', 'GET', packageEndpoint),
++                log('package-done', 'Complete',
++                    'Created package ${variables.createdPackageId}; HTTP ${lastStatus}.')
++            ]);
++        },
++        branch: function()
++        {
++            return definition('Evaluate workflow variables', [
++                variable('logic-set', 'Set onboarding stage', 'stage', 'approved'),
++                condition('logic-if', 'Manager approved?', 'variables.stage', 'eq', 'approved',
++                    [log('logic-yes', 'Approved path', 'Manager approved: continue provisioning.')],
++                    [log('logic-no', 'Rejected path', 'Approval missing: do not provision.')]),
++                log('logic-done', 'Complete', 'Decision recorded in the execution trace.')
++            ]);
++        }
++    };
++
++    this.version = '0.2';
++    this.list = function()
++    {
++        return examples.map(item => Object.assign({}, item));
++    };
++
++    this.get = function(id)
++    {
++        if (!Object.prototype.hasOwnProperty.call(templates, id))
++        {
++            throw new Error('Unknown studio example: ' + id);
++        }
++        const document = templates[id]();
++        PowerAutomateJS.assertValid(document);
++        return JSON.parse(JSON.stringify(document));
++    };
++
++    Object.freeze(this);
++}
++
++var NoCodeWorkflowLibrary = new NoCodeWorkflowLibraryContainer();
+diff --git a/test/PA_CONVENTIONS.test.js b/test/PA_CONVENTIONS.test.js
+new file mode 100644
+index 0000000..f9759a6
+--- /dev/null
++++ b/test/PA_CONVENTIONS.test.js
+@@ -0,0 +1,96 @@
++/* Browser regression: public constructor APIs and instance-owned workflow state. */
++'use strict';
++(async function()
++{
++    let passed = 0;
++    async function check(name, callback)
++    {
++        try
++        {
++            await callback();
++            console.log('PASS ' + name);
++            passed++;
++        }
++        catch (error)
++        {
++            console.error('FAIL ' + name, error);
++        }
++    }
++
++    await check('Public browser containers are named constructor functions', function()
++    {
++        assert.equal(typeof PowerAutomateCore, 'function');
++        assert.equal(typeof NoCodeWorkflowLibraryContainer, 'function');
++        assert.equal(PowerAutomateCore.name, 'PowerAutomateCore');
++        assert.equal(NoCodeWorkflowLibraryContainer.name, 'NoCodeWorkflowLibraryContainer');
++    });
++
++    await check('Existing PowerAutomateJS API stays compatible', function()
++    {
++        assert.equal(PowerAutomateJS.version, '0.1');
++        assert.equal(typeof PowerAutomateJS.WorkflowEngine, 'function');
++        for (const name of ['assertValid','sampleDefinition','interpolate'])
++        {
++            assert.ok(Object.prototype.hasOwnProperty.call(PowerAutomateJS, name));
++        }
++        assert.ok(Object.isFrozen(PowerAutomateJS));
++    });
++
++    await check('Public engine method belongs directly to each instance', function()
++    {
++        const fake = {execute: async () => ({success:true,objects:[],output:[],errors:[]})};
++        const first = new PowerAutomateJS.WorkflowEngine({powershell:fake});
++        const second = new PowerAutomateJS.WorkflowEngine({powershell:fake});
++        assert.ok(Object.prototype.hasOwnProperty.call(first, 'run'));
++        assert.ok(Object.prototype.hasOwnProperty.call(second, 'run'));
++        assert.ok(!Object.prototype.hasOwnProperty.call(PowerAutomateJS.WorkflowEngine.prototype, 'run'));
++        assert.equal(first.running, false);
++        assert.equal(second.running, false);
++    });
++
++    await check('Two engines maintain independent run state and variables', async function()
++    {
++        const fake = {execute: async () => ({success:true,objects:[],output:[],errors:[]})};
++        const first = new PowerAutomateJS.WorkflowEngine({powershell:fake});
++        const second = new PowerAutomateJS.WorkflowEngine({powershell:fake});
++        const definition = {
++            properties: {},
++            sequence: [
++                {id:'trigger',componentType:'task',type:'trigger',name:'Start',properties:{event:'manual'}},
++                {id:'var',componentType:'task',type:'setVariable',name:'Set',properties:{name:'x',value:'7'}}
++            ]
++        };
++        const a = await first.run(definition);
++        const b = await second.run(definition);
++        assert.equal(a.status, 'success', a.error);
++        assert.equal(b.status, 'success', b.error);
++        a.state.variables.x = 99;
++        assert.equal(b.state.variables.x, 7);
++        assert.notEqual(a.trace, b.trace);
++    });
++
++    await check('Library metadata and definitions are per-instance and cloned', function()
++    {
++        const first = new NoCodeWorkflowLibraryContainer();
++        const second = new NoCodeWorkflowLibraryContainer();
++        assert.equal(first.list().length, 5);
++        assert.equal(second.list().length, 5);
++        first.list()[0].label = 'CHANGED';
++        assert.notEqual(second.list()[0].label, 'CHANGED');
++        const a = first.get('branch');
++        a.sequence[1].name = 'MUTATED';
++        assert.notEqual(first.get('branch').sequence[1].name, 'MUTATED');
++    });
++
++    await check('Container constructor source has no wrapper or runtime module dependency', function()
++    {
++        for (const constructor of [PowerAutomateCore, NoCodeWorkflowLibraryContainer])
++        {
++            const source = constructor.toString();
++            assert.doesNotMatch(source, /\b(?:module\.exports|export\s+default|require\s*\(|fetch\s*\(|eval\s*\()/);
++            assert.doesNotMatch(source, /\bglobalThis\b/);
++        }
++    });
++
++    console.log('\n' + passed + ' PA convention checks passed.');
++})().then(() => BrowserTest.done()).catch(error => BrowserTest.crash(error));
+diff --git a/test/README.md b/test/README.md
+index 08874b4..84eca92 100644
+--- a/test/README.md
++++ b/test/README.md
+@@ -1,6 +1,6 @@
+ # IGAsim browser regression tests
+ 
+-Open **[`test/index.html`](index.html)** directly in a modern browser from the IGAsim directory. The browser regression dashboard automatically runs the nine suites, displays per-check pass/fail results, and has a **Run all suites** button to rerun them.
++Open **[`test/index.html`](index.html)** directly in a modern browser from the IGAsim directory. The browser regression dashboard automatically runs all thirteen suites, displays per-check pass/fail results, and has a **Run all suites** button to rerun them.
+ 
+ **No Node.js, npm, terminal, web server, download or external testing library is required.** The browser uses ordinary `<script src="...">` tags to load the same `../res/` modules as the main application. All identity fixtures are fictional and remain in memory.
+ 
+@@ -15,19 +15,23 @@ Open **[`test/index.html`](index.html)** directly in a modern browser from the I
+ | `PS_GRAPH_SAMPLES.test.js` | 14 Graph examples and DOM editor controls | 17 |
+ | `ENTITLEMENT_TESTS.js` | Catalog/package CRUD and nine entitlement-management examples | 32 |
+ | `TERMINAL_SCROLL.test.js` | Actual terminal DOM, long-line layout, scrolling, prompt usability | 7 |
+-| **Total** | | **278** |
++| `PA_TESTS.js` | NoCode JS-compatible workflow runner, identity dispatch and error handling | 16 |
++| `PA_LIBRARY.test.js` | Five sample workflows, definitions, Graph CRUD and AD actions | 9 |
++| `PA_STUDIO.test.js` | Browser Studio DOM integration and execution history | 8 |
++| `PA_CONVENTIONS.test.js` | Named constructors, direct instance methods, isolation and public APIs | 6 |
++| **Total** | | **317** |
+ 
+ ## How it works
+ 
+ - `index.html` is the graphical suite runner, and `dashboard.js` collects results.
+-- `suite.html` runs each suite in a separate browser iframe, with module scripts loaded from `../res/`. This prevents state and top-level declarations leaking between suites.
++- `suite.html` runs each suite in a separate browser iframe, with classic scripts loaded from `../res/`. This prevents state and top-level declarations leaking between suites.
+ - `browser-assert.js` implements lightweight dependency-free assertions. `browser-kit.js` captures test progress, returns browser errors to the dashboard, and uses fresh `srcdoc` frames for isolation tests.
+ - `app-fixture.js` provides a small DOM/terminal double for the **same `res/PS_APP.js`** bootstrap used in the real application. The standalone Entra demo likewise exposes shared `tools/EntraDirectory-demo.js` controls for browser testing.
+ - No `require()`, `node:fs`, `node:vm`, Node runner or network/file-fetch API is used by the regression tests.
+ 
+ ## Coverage boundaries
+ 
+-The existing 271 regression scenarios are retained, with seven new terminal display checks. Tests that previously inspected local source files with Node now exercise browser-loaded constructors and executable script paths. Since browser security prevents silently reading sibling `.ps1` and HTML files over `file://`, strict byte-for-byte parity checks of standalone `.ps1` copies are replaced by parser and execution checks of the editor's actual scripts. If editing standalone `.ps1` copies, manually compare them with the editor samples. A full visual inspection of the production `index.html` is still recommended.
++The initial 278 browser checks are retained, with 39 PowerAutomateJS, Studio and convention checks registered. Tests that previously inspected local source files with Node now exercise browser-loaded constructors and executable script paths. Since browser security prevents silently reading sibling `.ps1` and HTML files over `file://`, strict byte-for-byte parity checks of standalone `.ps1` copies are replaced by parser and execution checks of the editor's actual scripts. If editing standalone `.ps1` copies, manually compare them with the editor samples. A full visual inspection of the production `index.html` is still recommended.
+ 
+ The suite is offline and simulation-only: it never authenticates to Microsoft Graph, AD DS, Entra ID, or SAP. Browser behavior may differ across engines; test in your preferred browser before release.
+ 
+diff --git a/test/index.html b/test/index.html
+index a01ba8b..09d68b8 100644
+--- a/test/index.html
++++ b/test/index.html
+@@ -30,7 +30,7 @@ small {color:var(--muted)}iframe {position:absolute;width:0;height:0;border:0;op
+ <h1>IGAsim Regression Tests</h1>
+ <p>Run the complete offline test suite in your browser — no Node.js, web server, build tools or external libraries.</p>
+ <div class="controls"><button id="run">Run all suites</button><label><input type="checkbox" id="details"> Expand failed tests</label><span id="overall" role="status">Ready</span></div>
+-<div class="stats"><div class="stat">Passed: <strong id="passed">0</strong></div><div class="stat">Failed: <strong id="failed">0</strong></div><div class="stat">Suites finished: <strong id="finished">0 / 9</strong></div></div>
++<div class="stats"><div class="stat">Passed: <strong id="passed">0</strong></div><div class="stat">Failed: <strong id="failed">0</strong></div><div class="stat">Suites finished: <strong id="finished">0 / 13</strong></div></div>
+ <div id="suites"></div>
+ <p><small>Tests run in isolated frames. Browser scripts load from ../res/ with classic script tags and all data stays local. Open this page directly with file://. See test/README.md for details.</small></p>
+ </main><script src="suites.js"></script><script src="dashboard.js"></script></body></html>
+diff --git a/test/suite.html b/test/suite.html
+index 30baf5a..269350a 100644
+--- a/test/suite.html
++++ b/test/suite.html
+@@ -9,6 +9,8 @@
+ <script src="../res/ENTRA_CORE.js"></script>
+ <script src="../res/PS_GRAPH_COMMANDS.js"></script>
+ <script src="../res/PS_CORE.js"></script>
++<script src="../res/PA_CORE.js"></script>
++<script src="../res/PA_LIBRARY.js"></script>
+ <script src="../res/PS_TERMINAL_ADAPTER.js"></script>
+ <script src="app-fixture.js"></script>
+ <script src="../res/PS_APP.js"></script>
+diff --git a/test/suites.js b/test/suites.js
+index 19d32f0..6155ebe 100644
+--- a/test/suites.js
++++ b/test/suites.js
+@@ -8,5 +8,9 @@ var IGAsimTestSuites = [
+     'PS_GRAPH_TESTS.js',
+     'PS_GRAPH_SAMPLES.test.js',
+     'ENTITLEMENT_TESTS.js',
+-    'TERMINAL_SCROLL.test.js'
++    'TERMINAL_SCROLL.test.js',
++    'PA_TESTS.js',
++    'PA_LIBRARY.test.js',
++    'PA_STUDIO.test.js',
++    'PA_CONVENTIONS.test.js'
+ ];

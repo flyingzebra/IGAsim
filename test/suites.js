@@ -8,5 +8,9 @@ var IGAsimTestSuites = [
     'PS_GRAPH_TESTS.js',
     'PS_GRAPH_SAMPLES.test.js',
     'ENTITLEMENT_TESTS.js',
-    'TERMINAL_SCROLL.test.js'
+    'TERMINAL_SCROLL.test.js',
+    'PA_TESTS.js',
+    'PA_LIBRARY.test.js',
+    'PA_STUDIO.test.js',
+    'PA_CONVENTIONS.test.js'
 ];
